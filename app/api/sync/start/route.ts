@@ -6,7 +6,7 @@ import { isSyncResource } from "../../_syncTypes";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_PAGE_SIZE = 100;
-const DEFAULT_MAX_PAGES = 150;
+const DEFAULT_MAX_PAGES = 500;
 const ACTIVE_JOB_STALE_MS = 10 * 60 * 1000;
 
 function readString(value: unknown, fallback: string): string {
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const utente = readString(body.utente, "TeamSa");
     const azienda = readString(body.azienda, "1");
     const pageSize = readNumber(body.pageSize, DEFAULT_PAGE_SIZE, 25, 1000);
-    const maxPages = readNumber(body.maxPages, DEFAULT_MAX_PAGES, 1, 500);
+    const maxPages = readNumber(body.maxPages, DEFAULT_MAX_PAGES, 1, 1000);
 
     if (body.resource && typeof body.resource === "string" && !isSyncResource(body.resource)) {
       return NextResponse.json({ error: "resource non valido" }, { status: 400 });

@@ -163,6 +163,8 @@ async function fetchAllPages(params: {
   onProgress?: (pageNumber: number, rowsFetched: number) => Promise<void> | void;
 }): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
+  let reachedPageLimitWithPotentialMoreData = false;
+
   for (let pageNumber = 0; pageNumber < params.maxPages; pageNumber += 1) {
     const pageRows = await fetchGestionalePage({
       baseUrl: params.baseUrl,
@@ -182,8 +184,21 @@ async function fetchAllPages(params: {
     rows.push(...pageRows);
     await params.onProgress?.(pageNumber, rows.length);
 
-    if (pageRows.length < params.pageSize) break;
+    if (pageRows.length < params.pageSize) {
+      break;
+    }
+
+    if (pageNumber === params.maxPages - 1) {
+      reachedPageLimitWithPotentialMoreData = true;
+    }
   }
+
+  if (reachedPageLimitWithPotentialMoreData) {
+    throw new Error(
+      `Limite pagine raggiunto (${params.maxPages}) per ${params.entityName}: possibile troncamento dati. Aumentare maxPages e rilanciare la sincronizzazione.`
+    );
+  }
+
   return rows;
 }
 

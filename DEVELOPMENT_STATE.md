@@ -4,6 +4,12 @@ Ultimo aggiornamento: 2026-03-28
 Workspace: `C:\TS-API`
 Obiettivo progetto: frontend unico per interrogare API Alyante/gestionale su Clienti, Fornitori, Articoli, Ordini con filtri user-friendly e risultati leggibili.
 
+## Documentazione completa di continuita
+
+Per la storia completa, dettagliata e cronologica del lavoro (decisioni, incidenti, fix, stato attuale e runbook), vedere:
+
+- `docs/PROJECT_HISTORY_COMPLETE.md`
+
 ## 1) Configurazione API corretta (confermata)
 
 Le chiamate funzionano con questi parametri obbligatori:
@@ -258,6 +264,11 @@ Questo documento è la base di continuità per riprendere lo sviluppo senza perd
 
 3. Ricerca listini articolo
 - Endpoint: `POST /ListinoArticoloLI?_op=search`, `POST /ListinoArticoloLI/_op=searchlistino`
+
+## 17) Aggiornamento recente
+
+- La classificazione documenti lato frontend ora considera sia i codici testuali sia i codici numerici osservati nei payload reali, per evitare che i documenti finiscano tutti in "Altri documenti".
+- La sincronizzazione accetta un numero di pagine di default piu alto (`maxPages=500`, limite massimo `1000`) per ridurre il rischio di troncamento sui dataset piu voluminosi.
 - Obiettivo: visualizzare prezzo/listino articolo per cliente/fornitore o listino.
 - Beneficio: completa scenario commerciale.
 - Complessità: media.

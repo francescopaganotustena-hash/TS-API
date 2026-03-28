@@ -5,6 +5,7 @@ type SqlModule = typeof mssql;
 type SqlPool = mssql.ConnectionPool;
 type SqlRequest = mssql.Request;
 type BulkCellValue = string | number | boolean | Date | Buffer | null;
+type SqlFilterDescriptor = { clause: string; paramName: string; value: unknown };
 
 type ResourceConfig = {
   resource: SyncResource;
@@ -42,6 +43,7 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
     indexStatements: [
       "CREATE INDEX IX_cache_clienti_clifor ON {table}(cli_for);",
       "CREATE INDEX IX_cache_clienti_ragione_sociale ON {table}(ragione_sociale);",
+      "CREATE INDEX IX_cache_clienti_piva ON {table}(piva);",
     ],
     bulkColumns: [
       { name: "cli_for", type: (sql) => sql.Int, nullable: true },
@@ -54,12 +56,14 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       { name: "raw_json", type: (sql) => sql.NVarChar(sql.MAX), nullable: false },
     ],
     normalizeRow: (row, syncTime) => ({
-      cli_for: toNullableInt(getFirstValue(row, "cli_for", "cliFor", "id_cli_for", "idCliFor")),
-      id_cli_for: toNullableInt(getFirstValue(row, "id_cli_for", "idCliFor")),
-      ragione_sociale: toNullableString(getFirstValue(row, "ragione_sociale", "ragioneSociale", "ragione", "descrizione")),
-      piva: toNullableString(getFirstValue(row, "piva", "partitaIva", "vatNumber")),
-      citta: toNullableString(getFirstValue(row, "citta", "cittaResidenza", "city")),
-      flg_attivo: toNullableBoolean(getFirstValue(row, "flg_attivo", "attivo", "isActive")),
+      cli_for: toNullableInt(getFirstPathValue(row, "cliFor", "cli_for", "idCliFor", "id_cli_for")),
+      id_cli_for: toNullableInt(getFirstPathValue(row, "idCliFor", "id_cli_for", "cliFor", "cli_for")),
+      ragione_sociale: toNullableString(
+        getFirstPathValue(row, "anagrafica.ragioneSociale", "ragioneSociale", "anagrafica.nome", "ragione_sociale")
+      ),
+      piva: toNullableString(getFirstPathValue(row, "anagrafica.partiva", "partitaIva", "partiva", "piva")),
+      citta: toNullableString(getFirstPathValue(row, "anagrafica.citta", "citta", "city", "cittaResidenza")),
+      flg_attivo: toNullableBoolean(getFirstPathValue(row, "flgAttivo", "flg_attivo", "attivo", "isActive")),
       updated_at: toSqlDate(syncTime),
       raw_json: safeJsonStringify(row),
     }),
@@ -81,6 +85,7 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
     indexStatements: [
       "CREATE INDEX IX_cache_fornitori_clifor ON {table}(cli_for);",
       "CREATE INDEX IX_cache_fornitori_ragione_sociale ON {table}(ragione_sociale);",
+      "CREATE INDEX IX_cache_fornitori_piva ON {table}(piva);",
     ],
     bulkColumns: [
       { name: "cli_for", type: (sql) => sql.Int, nullable: true },
@@ -93,12 +98,14 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       { name: "raw_json", type: (sql) => sql.NVarChar(sql.MAX), nullable: false },
     ],
     normalizeRow: (row, syncTime) => ({
-      cli_for: toNullableInt(getFirstValue(row, "cli_for", "cliFor", "id_cli_for", "idCliFor")),
-      id_cli_for: toNullableInt(getFirstValue(row, "id_cli_for", "idCliFor")),
-      ragione_sociale: toNullableString(getFirstValue(row, "ragione_sociale", "ragioneSociale", "ragione", "descrizione")),
-      piva: toNullableString(getFirstValue(row, "piva", "partitaIva", "vatNumber")),
-      citta: toNullableString(getFirstValue(row, "citta", "cittaResidenza", "city")),
-      flg_attivo: toNullableBoolean(getFirstValue(row, "flg_attivo", "attivo", "isActive")),
+      cli_for: toNullableInt(getFirstPathValue(row, "cliFor", "cli_for", "idCliFor", "id_cli_for")),
+      id_cli_for: toNullableInt(getFirstPathValue(row, "idCliFor", "id_cli_for", "cliFor", "cli_for")),
+      ragione_sociale: toNullableString(
+        getFirstPathValue(row, "anagrafica.ragioneSociale", "ragioneSociale", "anagrafica.nome", "ragione_sociale")
+      ),
+      piva: toNullableString(getFirstPathValue(row, "anagrafica.partiva", "partitaIva", "partiva", "piva")),
+      citta: toNullableString(getFirstPathValue(row, "anagrafica.citta", "citta", "city", "cittaResidenza")),
+      flg_attivo: toNullableBoolean(getFirstPathValue(row, "flgAttivo", "flg_attivo", "attivo", "isActive")),
       updated_at: toSqlDate(syncTime),
       raw_json: safeJsonStringify(row),
     }),
@@ -118,6 +125,7 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
     indexStatements: [
       "CREATE INDEX IX_cache_articoli_codice ON {table}(codice_articolo);",
       "CREATE INDEX IX_cache_articoli_descrizione ON {table}(descrizione);",
+      "CREATE INDEX IX_cache_articoli_ditta ON {table}(ditta);",
     ],
     bulkColumns: [
       { name: "codice_articolo", type: (sql) => sql.NVarChar(80), nullable: true, maxLength: 80 },
@@ -128,10 +136,19 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       { name: "raw_json", type: (sql) => sql.NVarChar(sql.MAX), nullable: false },
     ],
     normalizeRow: (row, syncTime) => ({
-      codice_articolo: toNullableString(getFirstValue(row, "codice_articolo", "codiceArticolo", "cod_articolo", "codice")),
-      descrizione: toNullableString(getFirstValue(row, "descrizione", "description", "desc")),
-      ditta: toNullableInt(getFirstValue(row, "ditta", "azienda")),
-      flg_esaurito: toNullableBoolean(getFirstValue(row, "flg_esaurito", "esaurito")),
+      codice_articolo: getArticleCodeValue(row),
+      descrizione: toNullableString(
+        getFirstPathValue(
+          row,
+          "descrizione",
+          "currentDescription",
+          "datoDescrizione.descart",
+          "datoDescrizione.descartest",
+          "description"
+        )
+      ),
+      ditta: toNullableInt(getFirstPathValue(row, "ditta", "dittaCg18", "azienda")),
+      flg_esaurito: toNullableBoolean(getFirstPathValue(row, "flgArtesaur", "flg_esaurito", "esaurito")),
       updated_at: toSqlDate(syncTime),
       raw_json: safeJsonStringify(row),
     }),
@@ -155,6 +172,8 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       "CREATE INDEX IX_cache_ordini_numreg ON {table}(num_reg);",
       "CREATE INDEX IX_cache_ordini_tipodoc ON {table}(tipo_doc);",
       "CREATE INDEX IX_cache_ordini_cliforfatt ON {table}(cli_for_fatt);",
+      "CREATE INDEX IX_cache_ordini_clifordest ON {table}(cli_for_dest);",
+      "CREATE INDEX IX_cache_ordini_numdoc ON {table}(num_doc);",
     ],
     bulkColumns: [
       { name: "num_reg", type: (sql) => sql.BigInt, nullable: true },
@@ -168,13 +187,15 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       { name: "raw_json", type: (sql) => sql.NVarChar(sql.MAX), nullable: false },
     ],
     normalizeRow: (row, syncTime) => ({
-      num_reg: toNullableBigInt(getFirstValue(row, "num_reg", "numReg", "numeroRegistro")),
-      num_doc: toNullableString(getFirstValue(row, "num_doc", "numDoc", "numeroDocumento")),
-      tipo_doc: toNullableString(getFirstValue(row, "tipo_doc", "tipoDoc", "tipoDocumento")),
-      sez_doc: toNullableString(getFirstValue(row, "sez_doc", "sezDoc", "sezione")),
-      cli_for_fatt: toNullableInt(getFirstValue(row, "cli_for_fatt", "cliForFatt")),
-      cli_for_dest: toNullableInt(getFirstValue(row, "cli_for_dest", "cliForDest")),
-      data_doc: toSqlDate(getFirstValue(row, "data_doc", "dataDoc", "datadoc") ?? syncTime),
+      num_reg: toNullableBigInt(getFirstPathValue(row, "numReg", "num_reg", "numeroRegistro", "numreg")),
+      num_doc: toNullableString(getFirstPathValue(row, "numdoc", "numDoc", "num_doc", "numeroDocumento")),
+      tipo_doc: toNullableString(getFirstPathValue(row, "tipodoc", "tipoDoc", "tipo_doc", "tipoDocumento")),
+      sez_doc: toNullableString(getFirstPathValue(row, "sezdoc", "sezDoc", "sez_doc", "sezione")),
+      cli_for_fatt: toNullableInt(
+        getFirstPathValue(row, "cliforfatt", "cliForFatt", "cli_for_fatt", "clienteFornitoreMG.cliFor")
+      ),
+      cli_for_dest: toNullableInt(getFirstPathValue(row, "cliForDest", "cli_for_dest")),
+      data_doc: toSqlDate(getFirstPathValue(row, "datadoc", "dataDoc", "data_doc") ?? syncTime),
       updated_at: toSqlDate(syncTime),
       raw_json: safeJsonStringify(row),
     }),
@@ -195,6 +216,7 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
     indexStatements: [
       "CREATE INDEX IX_cache_righe_numreg ON {table}(num_reg);",
       "CREATE INDEX IX_cache_righe_codart ON {table}(cod_articolo);",
+      "CREATE INDEX IX_cache_righe_desc ON {table}(descrizione);",
     ],
     bulkColumns: [
       { name: "num_reg", type: (sql) => sql.BigInt, nullable: true },
@@ -206,11 +228,11 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       { name: "raw_json", type: (sql) => sql.NVarChar(sql.MAX), nullable: false },
     ],
     normalizeRow: (row, syncTime) => ({
-      num_reg: toNullableBigInt(getFirstValue(row, "num_reg", "numReg", "numeroRegistro")),
-      progr_riga: toNullableInt(getFirstValue(row, "progr_riga", "progrRiga", "progressivoRiga")),
-      cod_articolo: toNullableString(getFirstValue(row, "cod_articolo", "codArticolo", "codice_articolo", "codiceArticolo")),
-      descrizione: toNullableString(getFirstValue(row, "descrizione", "description", "desc")),
-      quantita: toNullableNumber(getFirstValue(row, "quantita", "qta", "qty")),
+      num_reg: toNullableBigInt(getFirstPathValue(row, "numReg", "num_reg", "numeroRegistro", "numreg")),
+      progr_riga: toNullableInt(getFirstPathValue(row, "progrRiga", "progr_riga", "progressivoRiga")),
+      cod_articolo: toNullableString(getFirstPathValue(row, "codartMg66", "cod_articolo", "codArticolo", "codiceArticoloMG")),
+      descrizione: toNullableString(getFirstPathValue(row, "descart", "estdescart", "descrizione", "description")),
+      quantita: toNullableNumber(getFirstPathValue(row, "qta1", "qta2", "quantita", "qty")),
       updated_at: toSqlDate(syncTime),
       raw_json: safeJsonStringify(row),
     }),
@@ -388,12 +410,213 @@ function getFirstValue(row: Record<string, unknown>, ...keys: string[]): unknown
   return undefined;
 }
 
+function getValueByPath(source: unknown, path: string): unknown {
+  const parts = path.split(".");
+
+  const resolve = (current: unknown, remaining: string[]): unknown => {
+    if (remaining.length === 0) return current;
+    if (current === null || current === undefined) return undefined;
+
+    if (Array.isArray(current)) {
+      for (const item of current) {
+        const found = resolve(item, remaining);
+        if (found !== undefined && found !== null && found !== "") return found;
+      }
+      return undefined;
+    }
+
+    if (typeof current !== "object") return undefined;
+
+    const [part, ...rest] = remaining;
+    const asRecord = current as Record<string, unknown>;
+    const directKey = Object.prototype.hasOwnProperty.call(asRecord, part) ? part : null;
+    const matchedKey =
+      directKey ??
+      Object.keys(asRecord).find((key) => canonicalKey(key) === canonicalKey(part)) ??
+      null;
+
+    if (!matchedKey) return undefined;
+    return resolve(asRecord[matchedKey], rest);
+  };
+
+  return resolve(source, parts);
+}
+
+function getFirstPathValue(row: Record<string, unknown>, ...paths: string[]): unknown {
+  for (const path of paths) {
+    const value = getValueByPath(row, path);
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+function getArticleCodeValue(row: Record<string, unknown>): string | null {
+  const candidatePaths = [
+    "codiceArticoloMG",
+    "codice_articolo",
+    "codiceArticolo",
+    "codice",
+    "codiceArticoloMG.codice",
+    "codiceArticoloMG.codiceArticolo",
+    "articolo.codiceArticoloMG",
+    "articolo.codiceArticolo",
+    "articolo.codice",
+    "datoDescrizione.codArtMg66",
+    "datoDescrizione.codiceArticoloMG",
+    "datoDescrizione.codiceArticolo",
+    "datiDescrizione.codArtMg66",
+    "datiDescrizione.codiceArticoloMG",
+    "datiDescrizione.codiceArticolo",
+  ];
+
+  for (const path of candidatePaths) {
+    const value = getFirstPathValue(row, path);
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed) return trimmed;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+      const text = String(value).trim();
+      if (text) return text;
+    }
+  }
+
+  return null;
+}
+
+function buildArticleCodeSqlExpression(columnName = "codice_articolo"): string {
+  return [
+    `NULLIF(LTRIM(RTRIM(${columnName})), '')`,
+    "JSON_VALUE(raw_json, '$.codiceArticoloMG')",
+    "JSON_VALUE(raw_json, '$.codice_articolo')",
+    "JSON_VALUE(raw_json, '$.codiceArticolo')",
+    "JSON_VALUE(raw_json, '$.codice')",
+    "JSON_VALUE(raw_json, '$.codiceArticoloMG.codice')",
+    "JSON_VALUE(raw_json, '$.codiceArticoloMG.codiceArticolo')",
+    "JSON_VALUE(raw_json, '$.datoDescrizione[0].codArtMg66')",
+    "JSON_VALUE(raw_json, '$.datoDescrizione[0].codiceArticoloMG')",
+    "JSON_VALUE(raw_json, '$.datoDescrizione[0].codiceArticolo')",
+  ].join(", ");
+}
+
 function getResourceConfig(resource: SyncResource): ResourceConfig {
   return RESOURCE_CONFIGS[resource];
 }
 
 function getTableName(resource: SyncResource): string {
   return getResourceConfig(resource).tableName;
+}
+
+function toSqlLikeValue(value: string): string {
+  return `%${value.replace(/[%_\[]/g, "[$&]")}%`;
+}
+
+function buildResourceFilterDescriptors(resource: SyncResource, filters: Record<string, string>): SqlFilterDescriptor[] {
+  const descriptors: SqlFilterDescriptor[] = [];
+  let idx = 0;
+  const nextParam = () => `f${idx++}`;
+
+  const addLike = (column: string, rawValue: string) => {
+    const paramName = nextParam();
+    descriptors.push({
+      clause: `${column} LIKE @${paramName}`,
+      paramName,
+      value: toSqlLikeValue(rawValue),
+    });
+  };
+
+  const addEqInt = (column: string, rawValue: string) => {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) return;
+    const paramName = nextParam();
+    descriptors.push({
+      clause: `${column} = @${paramName}`,
+      paramName,
+      value: Math.trunc(parsed),
+    });
+  };
+
+  for (const [key, raw] of Object.entries(filters)) {
+    const value = raw.trim();
+    if (!value) continue;
+    const normalizedKey = key.toLowerCase();
+
+    if (resource === "clienti" || resource === "fornitori") {
+      if (normalizedKey === "clifor") {
+        addEqInt("cli_for", value);
+        continue;
+      }
+      if (normalizedKey === "nome") {
+        addLike("ragione_sociale", value);
+        continue;
+      }
+      if (normalizedKey === "partitaiva") {
+        addLike("piva", value);
+        continue;
+      }
+      if (normalizedKey === "citta") {
+        addLike("citta", value);
+        continue;
+      }
+    }
+
+    if (resource === "articoli") {
+      if (normalizedKey === "codicearticolomg" || normalizedKey === "codice_articolo") {
+        addLike(`COALESCE(${buildArticleCodeSqlExpression("codice_articolo")})`, value);
+        continue;
+      }
+      if (normalizedKey === "descrizione") {
+        addLike("descrizione", value);
+        continue;
+      }
+    }
+
+    if (resource === "ordini") {
+      if (normalizedKey === "numreg") {
+        addEqInt("num_reg", value);
+        continue;
+      }
+      if (normalizedKey === "numdoc") {
+        addLike("num_doc", value);
+        continue;
+      }
+      if (normalizedKey === "tipodoc") {
+        addLike("tipo_doc", value);
+        continue;
+      }
+      if (normalizedKey === "sezdoc") {
+        addLike("sez_doc", value);
+        continue;
+      }
+      if (normalizedKey === "cliforfatt") {
+        addEqInt("cli_for_fatt", value);
+        continue;
+      }
+      if (normalizedKey === "clifordest") {
+        addEqInt("cli_for_dest", value);
+        continue;
+      }
+    }
+
+    if (resource === "righeOrdine") {
+      if (normalizedKey === "numreg") {
+        addEqInt("num_reg", value);
+        continue;
+      }
+      if (normalizedKey === "codartmg66" || normalizedKey === "codarticolo" || normalizedKey === "codicearticolo") {
+        addLike("cod_articolo", value);
+        continue;
+      }
+      if (normalizedKey === "descart" || normalizedKey === "descrizione") {
+        addLike("descrizione", value);
+        continue;
+      }
+    }
+
+    // Ignore unknown keys to keep query plans index-friendly.
+  }
+
+  return descriptors;
 }
 
 function extractIndexName(statement: string): string {
@@ -798,6 +1021,71 @@ export async function readLocalData(resource: SyncResource): Promise<LocalResour
     count: meta.count || rows.length,
     rows,
   };
+}
+
+export async function queryLocalResource(
+  resource: SyncResource,
+  filters: Record<string, string>,
+  pageNumber: number,
+  pageSize: number
+): Promise<{ resource: SyncResource; count: number; updatedAt: string | null; data: Record<string, unknown>[] }> {
+  const safePageNumber = Math.max(0, Math.floor(pageNumber));
+  const safePageSize = Math.max(1, Math.floor(pageSize));
+  const offset = safePageNumber * safePageSize;
+  const tableName = qualifiedName(SQLSERVER_SCHEMA, getTableName(resource));
+  const descriptors = buildResourceFilterDescriptors(resource, filters);
+  const whereClause = descriptors.length > 0 ? `WHERE ${descriptors.map((d) => d.clause).join(" AND ")}` : "";
+
+  return withReadyDb(async (connection) => {
+    const sql = getSql();
+    const countRequest: SqlRequest = connection.request();
+    const dataRequest: SqlRequest = connection.request();
+
+    for (const descriptor of descriptors) {
+      const sqlType = inferSqlType(sql, descriptor.value);
+      countRequest.input(descriptor.paramName, sqlType, descriptor.value ?? null);
+      dataRequest.input(descriptor.paramName, sqlType, descriptor.value ?? null);
+    }
+
+    countRequest.input("offsetRows", sql.Int, offset);
+    countRequest.input("fetchRows", sql.Int, safePageSize);
+    dataRequest.input("offsetRows", sql.Int, offset);
+    dataRequest.input("fetchRows", sql.Int, safePageSize);
+
+    const [countResult, dataResult, meta] = await Promise.all([
+      countRequest.query(`SELECT COUNT(1) AS total_count FROM ${tableName} ${whereClause}`),
+      dataRequest.query(
+        `SELECT row_id, updated_at, raw_json
+         FROM ${tableName}
+         ${whereClause}
+         ORDER BY row_id
+         OFFSET @offsetRows ROWS FETCH NEXT @fetchRows ROWS ONLY`
+      ),
+      readResourceMeta(resource),
+    ]);
+
+    const total = Number((countResult.recordset?.[0] as Record<string, unknown> | undefined)?.total_count ?? 0);
+    const rows = (dataResult.recordset ?? []).map((row) => {
+      const rec = row as Record<string, unknown>;
+      const rawJson = toNullableString(rec.raw_json);
+      if (rawJson) {
+        try {
+          const parsed = JSON.parse(rawJson) as unknown;
+          if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+        } catch {
+          // Ignore parse error and fallback to flattened row.
+        }
+      }
+      return rec;
+    });
+
+    return {
+      resource,
+      count: total,
+      updatedAt: meta.updatedAt,
+      data: rows,
+    };
+  });
 }
 
 export async function readAllLocalData(): Promise<LocalDataFile> {

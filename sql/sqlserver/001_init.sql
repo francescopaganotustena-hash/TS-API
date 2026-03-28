@@ -88,6 +88,7 @@ BEGIN
   );
   CREATE INDEX IX_cache_clienti_clifor ON dbo.cache_clienti(cli_for);
   CREATE INDEX IX_cache_clienti_ragione_sociale ON dbo.cache_clienti(ragione_sociale);
+  CREATE INDEX IX_cache_clienti_piva ON dbo.cache_clienti(piva);
 END;
 
 IF OBJECT_ID('dbo.cache_fornitori', 'U') IS NULL
@@ -105,6 +106,7 @@ BEGIN
   );
   CREATE INDEX IX_cache_fornitori_clifor ON dbo.cache_fornitori(cli_for);
   CREATE INDEX IX_cache_fornitori_ragione_sociale ON dbo.cache_fornitori(ragione_sociale);
+  CREATE INDEX IX_cache_fornitori_piva ON dbo.cache_fornitori(piva);
 END;
 
 IF OBJECT_ID('dbo.cache_articoli', 'U') IS NULL
@@ -120,7 +122,24 @@ BEGIN
   );
   CREATE INDEX IX_cache_articoli_codice ON dbo.cache_articoli(codice_articolo);
   CREATE INDEX IX_cache_articoli_descrizione ON dbo.cache_articoli(descrizione);
+  CREATE INDEX IX_cache_articoli_ditta ON dbo.cache_articoli(ditta);
 END;
+
+-- Backfill helper for existing rows after the extractor update:
+-- UPDATE dbo.cache_articoli
+-- SET codice_articolo = COALESCE(
+--   NULLIF(LTRIM(RTRIM(codice_articolo)), ''),
+--   JSON_VALUE(raw_json, '$.codiceArticoloMG'),
+--   JSON_VALUE(raw_json, '$.codice_articolo'),
+--   JSON_VALUE(raw_json, '$.codiceArticolo'),
+--   JSON_VALUE(raw_json, '$.codice'),
+--   JSON_VALUE(raw_json, '$.codiceArticoloMG.codice'),
+--   JSON_VALUE(raw_json, '$.codiceArticoloMG.codiceArticolo'),
+--   JSON_VALUE(raw_json, '$.datoDescrizione[0].codArtMg66'),
+--   JSON_VALUE(raw_json, '$.datoDescrizione[0].codiceArticoloMG'),
+--   JSON_VALUE(raw_json, '$.datoDescrizione[0].codiceArticolo')
+-- )
+-- WHERE codice_articolo IS NULL OR LTRIM(RTRIM(codice_articolo)) = '';
 
 IF OBJECT_ID('dbo.cache_ordini', 'U') IS NULL
 BEGIN
@@ -139,6 +158,8 @@ BEGIN
   CREATE INDEX IX_cache_ordini_numreg ON dbo.cache_ordini(num_reg);
   CREATE INDEX IX_cache_ordini_tipodoc ON dbo.cache_ordini(tipo_doc);
   CREATE INDEX IX_cache_ordini_cliforfatt ON dbo.cache_ordini(cli_for_fatt);
+  CREATE INDEX IX_cache_ordini_clifordest ON dbo.cache_ordini(cli_for_dest);
+  CREATE INDEX IX_cache_ordini_numdoc ON dbo.cache_ordini(num_doc);
 END;
 
 IF OBJECT_ID('dbo.cache_righe_ordine', 'U') IS NULL
@@ -155,4 +176,5 @@ BEGIN
   );
   CREATE INDEX IX_cache_righe_numreg ON dbo.cache_righe_ordine(num_reg);
   CREATE INDEX IX_cache_righe_codart ON dbo.cache_righe_ordine(cod_articolo);
+  CREATE INDEX IX_cache_righe_desc ON dbo.cache_righe_ordine(descrizione);
 END;

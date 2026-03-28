@@ -58,6 +58,32 @@ const RESOURCE_META: Record<MainResource, { title: string; description: string; 
   },
 };
 
+function buildSearchFilters(resource: MainResource, rawQuery: string): Record<string, string> {
+  const query = rawQuery.trim();
+  if (!query) return {};
+
+  const isNumeric = /^\d+$/.test(query);
+
+  if (resource === "clienti" || resource === "fornitori") {
+    if (isNumeric) return { cliFor: query };
+    return { nome: query };
+  }
+
+  if (resource === "articoli") {
+    if (/^[a-zA-Z0-9._/-]+$/.test(query) && query.length >= 3) {
+      return { codiceArticoloMG: query };
+    }
+    return { descrizione: query };
+  }
+
+  if (resource === "ordini") {
+    if (isNumeric) return { numdoc: query };
+    return { tipodoc: query };
+  }
+
+  return {};
+}
+
 function asText(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   const text = String(value).trim();
@@ -389,6 +415,7 @@ async function fetchLocalRows(body: {
   const response = await fetch(`/api/local/${body.resourceType}?${params.toString()}`, {
     method: "GET",
     headers: { Accept: "application/json" },
+    cache: "no-store",
   });
 
   const payload = await parseJsonOrText<Row[] | { data?: Row[]; error?: string }>(response);
@@ -683,36 +710,35 @@ export default function Home() {
   }, [clearSyncTimer, pollSyncJob, searchContext, syncStatus]);
 
   const loadResource = useCallback(
-    async (resource: MainResource) => {
+    async (resource: MainResource, filters: Record<string, string> = {}) => {
       setIsLoading(true);
       setError(null);
 
       try {
-        const pageSize = Math.max(searchContext.pageSize, 250);
-        const rows = await fetchAllPages(
-          {
+        const rows = await fetchLocalRows({
           ambiente: searchContext.ambiente,
           utente: searchContext.utente,
           azienda: searchContext.azienda,
           resourceType: resource,
-          filters: {},
-          pageSize,
+          filters,
+          pageSize: Math.max(searchContext.pageSize, 300),
           extendedMode: true,
-          },
-          resource === "ordini" ? 80 : 20
-        );
+        });
+        const effectiveRows =
+          rows.length > 0 || Object.keys(filters).length > 0
+            ? rows
+            : (dataByResource[resource] ?? []);
 
         const mappedNodes =
           resource === "clienti" || resource === "fornitori"
-            ? mapPartyNodes(resource, rows)
+            ? mapPartyNodes(resource, effectiveRows)
             : resource === "articoli"
-              ? mapArticleNodes(rows)
+              ? mapArticleNodes(effectiveRows)
             : resource === "ordini"
-              ? normalizeDocumentNodes(mapLibNodes(buildExplorerTree(resource, rows)))
-              : mapLibNodes(buildExplorerTree(resource, rows));
+              ? normalizeDocumentNodes(mapLibNodes(buildExplorerTree(resource, effectiveRows)))
+              : mapLibNodes(buildExplorerTree(resource, effectiveRows));
 
         setTreeNodes(mappedNodes);
-        setExpandedIds(collectExpandableIds(mappedNodes));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Errore sconosciuto");
         setTreeNodes([]);
@@ -720,7 +746,7 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [searchContext]
+    [dataByResource, searchContext]
   );
 
   useEffect(() => {
@@ -738,11 +764,11 @@ export default function Home() {
       setLoadedDocumentsFor([]);
       setLoadedDestinatariFor([]);
       setLoadedRowsFor([]);
-      void loadResource(activeResource);
+      void loadResource(activeResource, buildSearchFilters(activeResource, searchQuery));
     }, 350);
 
     return () => clearTimeout(timeout);
-  }, [activeResource, loadResource, refreshTick]);
+  }, [activeResource, loadResource, refreshTick, searchQuery]);
 
   useEffect(() => () => clearSyncTimer(), [clearSyncTimer]);
 
@@ -1001,7 +1027,12 @@ export default function Home() {
             activeResourceId={activeResource}
             onResourceSelect={(resourceId) => {
               setSearchQuery("");
+              setExpandedIds([]);
               setLoadedDestinatariFor([]);
+              setLoadedDocumentsFor([]);
+              setLoadedRowsFor([]);
+              setSelectedNodeId(null);
+              setSelectedNode(null);
               setActiveResource(resourceId as MainResource);
             }}
             onSyncAction={() => {

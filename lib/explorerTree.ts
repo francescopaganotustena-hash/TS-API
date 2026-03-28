@@ -74,6 +74,18 @@ const DOCUMENT_CLASS_INFO: Record<DocumentClassKey, DocumentClassification> = {
   altriDocumenti: { key: "altriDocumenti", label: "Altri documenti", itemLabel: "Documento" },
 };
 
+const DOCUMENT_CLASS_TEXT_HINTS: Record<Exclude<DocumentClassKey, "altriDocumenti">, string[]> = {
+  fatture: ["FATTURA", "FATTURE", "FAT", "FT", "FA", "FV", "INV", "INVOICE"],
+  ordini: ["ORDINE", "ORDINI", "ORD", "OC", "PO", "ORDER"],
+  ddt: ["DDT", "DD", "DE", "BOL", "BOLLA", "DELIVERY"],
+};
+
+const DOCUMENT_CLASS_NUMERIC_HINTS: Record<Exclude<DocumentClassKey, "altriDocumenti">, string[]> = {
+  fatture: ["1", "5", "6", "16"],
+  ordini: ["10", "15", "19", "24"],
+  ddt: ["3", "21", "22"],
+};
+
 const CHILD_GROUP_LABELS: Record<string, string> = {
   children: "Elementi",
   documenti: "Documenti",
@@ -222,27 +234,45 @@ export function buildNodeDetails(node: ExplorerTreeNode): ExplorerDetailField[] 
   return uniqueDetails(fields);
 }
 
-export function classifyDocumentType(tipodoc?: string): DocumentClassification {
-  const normalized = normalizeDocumentTypeCode(tipodoc);
+export function classifyDocumentType(...values: Array<string | null | undefined>): DocumentClassification {
+  const normalizedValues = values
+    .flatMap((value) => {
+      const normalized = normalizeDocumentTypeCode(value ?? undefined);
+      return normalized ? [normalized] : [];
+    })
+    .filter(Boolean);
 
-  if (!normalized) {
+  if (normalizedValues.length === 0) {
     return DOCUMENT_CLASS_INFO.altriDocumenti;
   }
 
-  if (
-    normalized.startsWith("FT") ||
-    normalized.startsWith("FA") ||
-    normalized.startsWith("FV") ||
-    normalized.startsWith("FAT")
-  ) {
+  const matchesText = (key: Exclude<DocumentClassKey, "altriDocumenti">) =>
+    DOCUMENT_CLASS_TEXT_HINTS[key].some((hint) => normalizedValues.some((value) => value.includes(hint)));
+
+  const matchesNumeric = (key: Exclude<DocumentClassKey, "altriDocumenti">) =>
+    DOCUMENT_CLASS_NUMERIC_HINTS[key].some((hint) => normalizedValues.some((value) => value === hint));
+
+  if (matchesText("fatture")) {
     return DOCUMENT_CLASS_INFO.fatture;
   }
 
-  if (normalized.startsWith("ORD") || normalized === "OC" || normalized.startsWith("OC")) {
+  if (matchesText("ordini")) {
     return DOCUMENT_CLASS_INFO.ordini;
   }
 
-  if (normalized.startsWith("DDT") || normalized === "DE" || normalized.startsWith("DE")) {
+  if (matchesText("ddt")) {
+    return DOCUMENT_CLASS_INFO.ddt;
+  }
+
+  if (matchesNumeric("fatture")) {
+    return DOCUMENT_CLASS_INFO.fatture;
+  }
+
+  if (matchesNumeric("ordini")) {
+    return DOCUMENT_CLASS_INFO.ordini;
+  }
+
+  if (matchesNumeric("ddt")) {
     return DOCUMENT_CLASS_INFO.ddt;
   }
 
@@ -255,15 +285,23 @@ export function describeDocumentType(tipodoc?: string): string {
 
 export function formatDocumentDisplay(row: AnyRecord): DocumentDisplayInfo {
   const tipodoc = firstText(row, ["tipodoc", "tipoDocumento", "docType", "tipo_doc"]);
+  const tipoDocumento = firstText(row, ["TipoDocumento", "tipoDocumento", "tipodocLabel", "docTypeLabel"]);
   const sezdoc = firstText(row, ["sezdoc", "sezionale", "sezione"]);
   const numdoc = firstText(row, ["numdoc", "numeroDocumento", "numero", "docNumber"]);
   const numReg = firstText(row, ["numReg", "numreg", "registro"]);
+  const numdocorig = firstText(row, ["numdocorig", "numDocOrig", "numeroDocumentoOriginale"]);
   const datadoc = firstText(row, ["datadoc", "data", "documentDate"]);
   const cliFor = firstText(row, ["cliforfatt", "cliForDest", "clienteFornitoreMG.cliFor"]);
   const amount = formatAmount(row);
 
-  const classification = classifyDocumentType(tipodoc ?? undefined);
-  const code = buildDocumentCode(tipodoc ?? undefined, sezdoc ?? undefined, numdoc ?? undefined, numReg ?? undefined);
+  const classification = classifyDocumentType(tipodoc, tipoDocumento);
+  const code = buildDocumentCode(
+    tipodoc ?? undefined,
+    sezdoc ?? undefined,
+    numdoc ?? undefined,
+    numReg ?? undefined,
+    numdocorig ?? undefined
+  );
   const label = buildDocumentLabel(classification, code);
   const metaParts = [
     datadoc ? `Data ${datadoc}` : null,
@@ -438,6 +476,7 @@ function buildDocumentDetails(row: AnyRecord, display: DocumentDisplayInfo): Exp
   pushField(fields, "Codice", display.code);
   pushField(fields, "Tipo documento", display.itemLabel);
   pushField(fields, "Tipo origine", display.tipodoc);
+  pushField(fields, "Numero originale", firstText(row, ["numdocorig", "numDocOrig", "numeroDocumentoOriginale"]));
   pushField(fields, "Data", firstText(row, ["datadoc", "data", "documentDate"]));
   pushField(fields, "Registro", firstText(row, ["numReg", "numreg", "registro"]), true);
   pushField(fields, "Sezionale", firstText(row, ["sezdoc", "sezionale"]));
@@ -639,9 +678,18 @@ function buildDocumentCode(
   tipodoc?: string,
   sezdoc?: string,
   numdoc?: string,
-  numReg?: string
+  numReg?: string,
+  numdocorig?: string
 ): string | undefined {
-  const parts = [tipodoc, sezdoc, numdoc].filter(Boolean) as string[];
+  const originalCode = numdocorig?.trim();
+  if (originalCode) {
+    return originalCode;
+  }
+
+  const rawTipodoc = tipodoc?.trim();
+  const normalizedTipodoc = normalizeDocumentTypeCode(rawTipodoc);
+  const typePart = rawTipodoc && /\D/.test(normalizedTipodoc) ? rawTipodoc : undefined;
+  const parts = [typePart, sezdoc, numdoc].filter(Boolean) as string[];
   if (parts.length > 0) {
     return parts.join("/");
   }
