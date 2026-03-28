@@ -534,3 +534,47 @@ Data aggiornamento: 2026-03-27
   - `GET http://localhost:3000` -> `200 OK`
 - Stato:
   - server locale avviato e pronto per test manuali UI.
+
+## 26) Stato SQL Server e storage provider (2026-03-28)
+
+### Configurazione attiva
+
+- Provider storage locale: `sqlserver` (`SYNC_STORAGE_PROVIDER=sqlserver`)
+- Istanza SQL: `MSSQLSERVER` (localhost)
+- Database locale cache: `TSApiLocalCache`
+- Schema applicato: `sql/sqlserver/001_init.sql`
+
+### Verifiche effettuate
+
+- Connessione backend Node -> SQL Server: `OK`
+- Endpoint metadata locale su provider SQL:
+  - `GET /api/local/meta` risponde con dati da `sync_meta`/`sync_resource_meta`
+- Sync end-to-end su SQL Server: `OK`
+  - Job: `sync_1774696823200`
+  - Stato finale: `success`
+  - Errori: `0`
+
+### Snapshot conteggi tabelle dopo sync
+
+- `cache_clienti = 107`
+- `cache_fornitori = 523`
+- `cache_articoli = 3000` (run limitata da `maxPages` nel test)
+- `cache_ordini = 3000` (run limitata da `maxPages` nel test)
+- `cache_righe_ordine = 3000` (run limitata da `maxPages` nel test)
+- `sync_jobs = 2`
+- `sync_meta = 1`
+- `sync_resource_meta = 5`
+
+## 27) Bonifica workspace (2026-03-28)
+
+### Pulizia eseguita
+
+- Rimossi artefatti temporanei e log non necessari (`.tmp*`, `.dev*`, `.start*`, `tsconfig.tsbuildinfo`): `39` file eliminati.
+- Nessun file sorgente applicativo eliminato.
+
+### Vincolo operativo rispettato
+
+- Nessuna interruzione servizio durante la bonifica richiesta.
+- Verifica post-bonifica:
+  - `GET http://localhost:3000` -> `200`
+  - `GET /api/local/meta` -> `OK`

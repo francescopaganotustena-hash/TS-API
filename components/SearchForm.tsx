@@ -74,47 +74,67 @@ export default function SearchForm({ onSearch, onDirectClientTest, isLoading }: 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md mb-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+    <form onSubmit={handleSubmit} className="panel p-6 mb-6">
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        {RESOURCE_TYPES.map((type) => {
+          const active = resourceType === type;
+          return (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setResourceType(type)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                active
+                  ? "bg-emerald-600 text-white shadow"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {getResourceLabel(type)}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
         <div>
-          <label className="block text-sm font-medium mb-1">Ambiente *</label>
+          <label className="block text-xs font-semibold tracking-wide text-slate-500 uppercase mb-1">Ambiente</label>
           <input
             type="text"
             value={ambiente}
             onChange={(e) => setAmbiente(e.target.value)}
-            className="w-full p-2 border rounded"
+            className="w-full rounded-lg border px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Utente *</label>
+          <label className="block text-xs font-semibold tracking-wide text-slate-500 uppercase mb-1">Utente</label>
           <input
             type="text"
             value={utente}
             onChange={(e) => setUtente(e.target.value)}
-            className="w-full p-2 border rounded"
+            className="w-full rounded-lg border px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Azienda *</label>
+          <label className="block text-xs font-semibold tracking-wide text-slate-500 uppercase mb-1">Azienda</label>
           <input
             type="text"
             value={azienda}
             onChange={(e) => setAzienda(e.target.value)}
-            className="w-full p-2 border rounded"
+            className="w-full rounded-lg border px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Risorsa *</label>
+          <label className="block text-xs font-semibold tracking-wide text-slate-500 uppercase mb-1">Risorsa</label>
           <select
             value={resourceType}
             onChange={(e) => setResourceType(e.target.value as ResourceType)}
-            className="w-full p-2 border rounded"
+            className="w-full rounded-lg border px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
           >
             {RESOURCE_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -125,19 +145,19 @@ export default function SearchForm({ onSearch, onDirectClientTest, isLoading }: 
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Page size</label>
+          <label className="block text-xs font-semibold tracking-wide text-slate-500 uppercase mb-1">Page size</label>
           <input
             type="number"
             min={MIN_PAGE_SIZE}
             max={1000}
             value={pageSize}
             onChange={(e) => setPageSize(Math.max(MIN_PAGE_SIZE, Number(e.target.value) || MIN_PAGE_SIZE))}
-            className="w-full p-2 border rounded"
+            className="w-full rounded-lg border px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
           />
         </div>
       </div>
 
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
         <input
           id="extended-mode"
           type="checkbox"
@@ -145,26 +165,26 @@ export default function SearchForm({ onSearch, onDirectClientTest, isLoading }: 
           onChange={(e) => setExtendedMode(e.target.checked)}
           className="h-4 w-4"
         />
-        <label htmlFor="extended-mode" className="text-sm font-medium">
+        <label htmlFor="extended-mode" className="text-sm font-medium text-emerald-900">
           Ricerca estesa (campi avanzati + fallback automatico)
         </label>
       </div>
 
       <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">Filtri ricerca ({getResourceLabel(resourceType)})</label>
-        <p className="text-xs text-gray-500 mb-3">
+        <label className="block text-sm font-semibold mb-2">Filtri ricerca ({getResourceLabel(resourceType)})</label>
+        <p className="text-xs text-slate-500 mb-3">
           I filtri sono sempre visibili. I campi avanzati (es. nome/ragione sociale e descrizione articolo)
           attivano automaticamente la ricerca estesa se compilati.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {searchFields.map((field) => (
             <div key={field.key}>
-              <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
+              <label className="block text-xs text-slate-500 mb-1">{field.label}</label>
               <input
                 type="text"
                 value={filters[field.key] || ""}
                 onChange={(e) => handleFilterChange(field.key, e.target.value)}
-                className="w-full p-2 border rounded"
+                className="w-full rounded-lg border px-3 py-2 bg-white/90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 placeholder={field.placeholder}
               />
             </div>
@@ -176,7 +196,7 @@ export default function SearchForm({ onSearch, onDirectClientTest, isLoading }: 
         <button
           type="submit"
           disabled={isLoading}
-          className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+          className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-emerald-700 disabled:opacity-50"
         >
           {isLoading ? "Caricamento..." : `Cerca ${getResourceLabel(resourceType)}`}
         </button>
@@ -184,7 +204,7 @@ export default function SearchForm({ onSearch, onDirectClientTest, isLoading }: 
           type="button"
           onClick={handleQuickClientTest}
           disabled={isLoading}
-          className="bg-slate-700 text-white px-6 py-2 rounded hover:bg-slate-800 disabled:opacity-50"
+          className="bg-slate-800 text-white px-6 py-2 rounded-lg font-medium hover:bg-slate-900 disabled:opacity-50"
         >
           Test diretto cliente (id 2)
         </button>

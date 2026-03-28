@@ -19,4 +19,9 @@ Thumbs.db
 
 .tmp*
 .dev-*.log
+.dev*.log
 .start-*.log
+.start*.log
+tsconfig.tsbuildinfo
+node_modules
+.ts-api-sync/

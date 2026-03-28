@@ -111,34 +111,34 @@ export default function DataTable({ data, resourceType, isLoading, error, onClie
   };
 
   if (isLoading) {
-    return <div className="text-center py-8">Caricamento in corso...</div>;
+    return <div className="panel text-center py-8 text-slate-600">Caricamento in corso...</div>;
   }
 
   if (error) {
-    return <div className="text-red-600 py-4">Errore: {error}</div>;
+    return <div className="panel text-red-700 border-red-200 bg-red-50 py-4 px-4">Errore: {error}</div>;
   }
 
   if (!data || data.length === 0) {
-    return <div className="text-gray-500 py-8">Nessun dato disponibile. Esegui una ricerca.</div>;
+    return <div className="panel text-slate-500 py-8 px-4">Nessun dato disponibile. Esegui una ricerca.</div>;
   }
 
   const showClientActions = resourceType === "clienti" && typeof onClientDocuments === "function";
   const showOrderActions = resourceType === "ordini" && typeof onOrderRows === "function";
 
   return (
-    <div className="bg-white rounded-lg shadow-md overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+    <div className="panel overflow-x-auto">
+      <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-slate-100/80">
           <tr>
             {columns.map((col) => (
               <th
                 key={col.key}
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider"
               >
                 <button
                   type="button"
                   onClick={() => handleSort(col.key)}
-                  className="inline-flex items-center gap-1 hover:text-gray-800"
+                  className="inline-flex items-center gap-1 hover:text-slate-900"
                   title="Ordina per questa colonna"
                 >
                   <span>{col.label}</span>
@@ -147,19 +147,19 @@ export default function DataTable({ data, resourceType, isLoading, error, onClie
               </th>
             ))}
             {(showClientActions || showOrderActions) && (
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th className="px-6 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                 Azioni
               </th>
             )}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-white divide-y divide-slate-100">
           {sortedData.map((row, idx) => (
-            <tr key={idx} className={idx % 2 === 0 ? "even:bg-gray-50" : ""}>
+            <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/55"}>
               {columns.map((col) => {
                 const rawValue = getFirstColumnValue(row, col.paths);
                 return (
-                  <td key={col.key} className="px-6 py-4 whitespace-nowrap text-sm">
+                  <td key={col.key} className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
                     {formatCellValue(rawValue)}
                   </td>
                 );
@@ -169,7 +169,7 @@ export default function DataTable({ data, resourceType, isLoading, error, onClie
                   {showClientActions && (
                     <button
                       type="button"
-                      className="bg-slate-700 text-white px-3 py-1 rounded hover:bg-slate-800"
+                      className="bg-slate-800 text-white px-3 py-1 rounded-lg hover:bg-slate-900"
                       onClick={() => {
                         const cliForValue = getFirstColumnValue(row, ["cliFor"]);
                         if (cliForValue === undefined || cliForValue === null) return;
@@ -187,7 +187,7 @@ export default function DataTable({ data, resourceType, isLoading, error, onClie
                   {showOrderActions && (
                     <button
                       type="button"
-                      className="bg-indigo-700 text-white px-3 py-1 rounded hover:bg-indigo-800"
+                      className="bg-emerald-700 text-white px-3 py-1 rounded-lg hover:bg-emerald-800"
                       onClick={() => {
                         const numReg = getFirstColumnValue(row, ["numReg"]);
                         const numdoc = getFirstColumnValue(row, ["numdoc"]);
