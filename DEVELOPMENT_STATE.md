@@ -9,6 +9,7 @@ Obiettivo progetto: frontend unico per interrogare API Alyante/gestionale su Cli
 Per la storia completa, dettagliata e cronologica del lavoro (decisioni, incidenti, fix, stato attuale e runbook), vedere:
 
 - `docs/PROJECT_HISTORY_COMPLETE.md`
+- `README.md` (quickstart operativo sintetico)
 
 ## 1) Configurazione API corretta (confermata)
 
