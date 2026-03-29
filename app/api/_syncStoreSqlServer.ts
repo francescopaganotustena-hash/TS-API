@@ -576,6 +576,46 @@ function buildResourceFilterDescriptors(resource: SyncResource, filters: Record<
     }
 
     if (resource === "ordini") {
+      const addOrderPartyFilter = (partyCode: string, perspective: "fornitore" | "cliente") => {
+        const parsed = Number(partyCode);
+        if (!Number.isFinite(parsed)) return;
+        const paramName = nextParam();
+        const normalizedCode = Math.trunc(parsed);
+        const expectedTipoCf = perspective === "fornitore" ? 1 : 0;
+        const clause =
+          perspective === "fornitore"
+            ? `(
+                 (
+                   cli_for_fatt = @${paramName}
+                   OR TRY_CONVERT(BIGINT, JSON_VALUE(raw_json, '$.cliforfatt')) = @${paramName}
+                   OR TRY_CONVERT(BIGINT, JSON_VALUE(raw_json, '$.clienteFornitoreMG.cliFor')) = @${paramName}
+                 )
+                 AND COALESCE(
+                   TRY_CONVERT(INT, JSON_VALUE(raw_json, '$.clienteFornitoreMG.tipoCf')),
+                   TRY_CONVERT(INT, JSON_VALUE(raw_json, '$.clienteFornitoreMG.tipocfCg40')),
+                   ${expectedTipoCf}
+                 ) = ${expectedTipoCf}
+               )`
+            : `(
+                 (
+                   cli_for_dest = @${paramName}
+                   OR TRY_CONVERT(BIGINT, JSON_VALUE(raw_json, '$.cliForDest')) = @${paramName}
+                   OR TRY_CONVERT(BIGINT, JSON_VALUE(raw_json, '$.clienteFornitoreMG.cliFor')) = @${paramName}
+                 )
+                 AND COALESCE(
+                   TRY_CONVERT(INT, JSON_VALUE(raw_json, '$.clienteFornitoreMG.tipoCf')),
+                   TRY_CONVERT(INT, JSON_VALUE(raw_json, '$.clienteFornitoreMG.tipocfCg40')),
+                   ${expectedTipoCf}
+                 ) = ${expectedTipoCf}
+               )`;
+
+        descriptors.push({
+          clause,
+          paramName,
+          value: normalizedCode,
+        });
+      };
+
       if (normalizedKey === "numreg") {
         addEqInt("num_reg", value);
         continue;
@@ -593,11 +633,11 @@ function buildResourceFilterDescriptors(resource: SyncResource, filters: Record<
         continue;
       }
       if (normalizedKey === "cliforfatt") {
-        addEqInt("cli_for_fatt", value);
+        addOrderPartyFilter(value, "fornitore");
         continue;
       }
       if (normalizedKey === "clifordest") {
-        addEqInt("cli_for_dest", value);
+        addOrderPartyFilter(value, "cliente");
         continue;
       }
     }

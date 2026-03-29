@@ -177,3 +177,36 @@ Analizzare il progetto TS-API Portal e recuperare le specifiche delle API dal ge
 - `npm run lint` superato dopo ogni modifica principale.
 - Verificata esecuzione reale di sync incrementali su risorse multiple.
 - Verificato fallback per-risorsa durante sync globale incrementale.
+
+---
+
+## Data: 29 Marzo 2026 (aggiornamento serale)
+
+### Ultime Fix Stabilita Dati Documenti
+
+#### Problema osservato
+
+- Sotto alcuni fornitori comparivano ancora fatture/DDT non coerenti con il soggetto selezionato.
+- Causa principale: collisioni su codici `cliFor` tra anagrafiche clienti e fornitori, con campi documento non sempre uniformi (`cliforfatt`, `cliForDest`, `clienteFornitoreMG.cliFor`).
+
+#### Correzioni applicate
+
+1. **Filtro UI contestuale rafforzato**
+   - Post-filtro sempre applicato nel caricamento documenti per cliente/fornitore.
+   - Eliminato uso ambiguo di `cliForDest` nel flusso fornitori come fallback primario.
+   - Aggiunta validazione supplementare per `tipoCf` e, in fallback, confronto su ragione sociale.
+
+2. **Blindatura backend su query locali ordini (fix strutturale)**
+   - Nel motore query SQL locale, i filtri documento ora includono anche il tipo soggetto:
+     - `cliforfatt` -> vincolato a `tipoCf=1` (fornitore)
+     - `cliForDest` -> vincolato a `tipoCf=0` (cliente)
+   - Questo riduce il rischio che future sync reintroducano contaminazioni tra documenti clienti/fornitori.
+
+3. **Verifica operativa**
+   - Eseguiti test API locali con filtri dedicati.
+   - `npm run lint` superato dopo le modifiche.
+
+#### Esito
+
+- La logica documenti e ora piu robusta sia lato UI che lato backend.
+- Il comportamento resta stabile anche con nuove sincronizzazioni, grazie al vincolo per `tipoCf` in query.

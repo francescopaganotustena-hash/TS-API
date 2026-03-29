@@ -213,6 +213,11 @@ function normalizePartyCode(value?: string): string {
   return stripped.replace(/^0+/, "") || stripped;
 }
 
+function normalizePartyName(value?: string): string {
+  if (!value) return "";
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 function getInitialDocumentClassFolders(parentId: string): TreeNode[] {
   const makePlaceholder = (folderId: string): TreeNode => ({
     id: `${folderId}:placeholder`,
@@ -255,18 +260,43 @@ function getInitialDocumentClassFolders(parentId: string): TreeNode[] {
   ];
 }
 
-function filterDocsByOwner(rows: Row[], ownerCode: string): Row[] {
+function filterDocsByOwner(
+  rows: Row[],
+  ownerCode: string,
+  perspective: "clienti" | "fornitori",
+  ownerName?: string
+): Row[] {
   const wanted = normalizePartyCode(ownerCode);
   if (!wanted) return rows;
+  const expectedType = perspective === "fornitori" ? 1 : 0;
+  const wantedName = normalizePartyName(ownerName);
 
   return rows.filter((row) => {
-    const candidates = [
-      asText(getByPath(row, "cliforfatt")),
-      asText(getByPath(row, "cliForDest")),
-      asText(getByPath(row, "clienteFornitoreMG.cliFor")),
-    ].filter(Boolean) as string[];
+    const candidates =
+      perspective === "fornitori"
+        ? [asText(getByPath(row, "cliforfatt")), asText(getByPath(row, "clienteFornitoreMG.cliFor"))]
+        : [asText(getByPath(row, "cliForDest")), asText(getByPath(row, "clienteFornitoreMG.cliFor")), asText(getByPath(row, "cliforfatt"))];
+    const codeMatches = (candidates.filter(Boolean) as string[]).some((candidate) => normalizePartyCode(candidate) === wanted);
+    if (!codeMatches) return false;
 
-    return candidates.some((candidate) => normalizePartyCode(candidate) === wanted);
+    const rawType = asText(getByPath(row, "clienteFornitoreMG.tipoCf")) ?? asText(getByPath(row, "clienteFornitoreMG.tipocfCg40"));
+    const parsedType = rawType === "" ? NaN : Number(rawType);
+    if (Number.isFinite(parsedType)) {
+      return Math.trunc(parsedType) === expectedType;
+    }
+
+    if (wantedName) {
+      const rowName =
+        asText(getByPath(row, "clienteFornitoreMG.anagrafica.ragioneSociale")) ??
+        asText(getByPath(row, "clienteFornitoreMG.anagrafica.denominazione")) ??
+        asText(getByPath(row, "ragioneSociale"));
+      const normalizedRowName = normalizePartyName(rowName);
+      if (normalizedRowName) {
+        return normalizedRowName === wantedName;
+      }
+    }
+
+    return true;
   });
 }
 
@@ -783,16 +813,22 @@ export default function Home() {
 
         let docs = await fetchLocalRows({
           ...baseOrderRequest,
-          filters: { cliforfatt: ownerCode },
+          filters: activeResource === "fornitori" ? { cliforfatt: ownerCode } : { cliForDest: ownerCode },
           extendedMode: true,
         });
+        docs = filterDocsByOwner(docs, ownerCode, activeResource, ownerLabel);
 
         if (docs.length === 0) {
-          docs = await fetchLocalRows({
-            ...baseOrderRequest,
-            filters: { cliForDest: ownerCode },
-            extendedMode: true,
-          });
+          if (activeResource === "fornitori") {
+            docs = [];
+          } else {
+            docs = await fetchLocalRows({
+              ...baseOrderRequest,
+              filters: { cliforfatt: ownerCode },
+              extendedMode: true,
+            });
+            docs = filterDocsByOwner(docs, ownerCode, activeResource, ownerLabel);
+          }
         }
 
         if (docs.length === 0) {
@@ -804,7 +840,7 @@ export default function Home() {
             },
             8
           );
-          docs = filterDocsByOwner(broadDocs, ownerCode);
+          docs = filterDocsByOwner(broadDocs, ownerCode, activeResource, ownerLabel);
         }
 
         const classFolders =
