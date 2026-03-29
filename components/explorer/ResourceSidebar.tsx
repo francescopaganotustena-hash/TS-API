@@ -130,7 +130,7 @@ export function ResourceSidebar({
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_0_6px_rgba(16,185,129,0.12)]" />
             <span className="text-sm font-medium text-white">{footerTitle}</span>
           </div>
-          <div className="mt-1 text-xs text-slate-400">{footerSubtitle}</div>
+          <div className="mt-1 break-words text-xs text-slate-400">{footerSubtitle}</div>
           <div className="mt-3">
             <ResourceStatus tone={footerTone} text={footerTone === "active" ? "Live" : footerTone} />
           </div>
@@ -142,7 +142,7 @@ export function ResourceSidebar({
           >
             {syncActionLabel}
           </button>
-          {syncActionStatus && <div className="mt-2 text-[11px] text-slate-400">{syncActionStatus}</div>}
+          {syncActionStatus && <div className="mt-2 break-words text-[11px] text-slate-400">{syncActionStatus}</div>}
         </div>
       </div>
     </aside>

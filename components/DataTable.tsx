@@ -159,7 +159,7 @@ export default function DataTable({ data, resourceType, isLoading, error, onClie
               {columns.map((col) => {
                 const rawValue = getFirstColumnValue(row, col.paths);
                 return (
-                  <td key={col.key} className="px-6 py-4 whitespace-nowrap text-sm text-slate-700">
+                  <td key={col.key} className="max-w-[320px] px-6 py-4 whitespace-normal break-all text-sm text-slate-700">
                     {formatCellValue(rawValue)}
                   </td>
                 );

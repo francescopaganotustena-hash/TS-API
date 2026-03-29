@@ -210,3 +210,19 @@ Analizzare il progetto TS-API Portal e recuperare le specifiche delle API dal ge
 
 - La logica documenti e ora piu robusta sia lato UI che lato backend.
 - Il comportamento resta stabile anche con nuove sincronizzazioni, grazie al vincolo per `tipoCf` in query.
+
+---
+
+## Data: 29 Marzo 2026 (chiusura UI/Build)
+
+### Hardening finale interfaccia e pagine simulate
+
+- Esteso hardening anti-overflow su pannelli Explorer:
+  - dettaglio nodo (`DetailPanel`)
+  - albero documenti (`TreeExplorer`)
+  - sidebar risorse (`ResourceSidebar`)
+  - tabella dati (`DataTable`)
+- Corretto routing/build delle pagine simulate (`fattura`, `ordine`, `ddt`) rimuovendo dipendenza da `useSearchParams` in render.
+- Validazione finale eseguita:
+  - `npm run lint` OK
+  - `npm run build` OK (dopo pulizia cache `.next`)

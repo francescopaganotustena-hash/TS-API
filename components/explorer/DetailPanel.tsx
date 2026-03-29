@@ -50,10 +50,10 @@ function RawBlock({ value }: { value: unknown }) {
 function DetailLine({ field }: { field: DetailField }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-slate-100 py-3 last:border-b-0">
-      <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{field.label}</span>
+      <span className="min-w-0 shrink-0 text-xs font-medium uppercase tracking-wide text-slate-500">{field.label}</span>
       <span
         className={cx(
-          "max-w-[62%] text-right text-sm",
+          "min-w-0 max-w-[62%] whitespace-normal break-all text-right text-sm",
           field.mono ? "font-mono" : "",
           field.tone === "muted"
             ? "text-slate-500"
@@ -108,7 +108,7 @@ export function DetailPanel({
           <div className="space-y-5">
             <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4">
               <div className="flex flex-wrap items-center gap-2">
-                <h4 className="text-lg font-semibold text-slate-950">{node.label}</h4>
+                <h4 className="min-w-0 break-words text-lg font-semibold text-slate-950">{node.label}</h4>
                 {node.status && (
                   <span className={cx("rounded-full px-2.5 py-0.5 text-[11px] font-semibold", toneStyles[node.statusTone ?? "neutral"])}>
                     {node.status}
@@ -120,14 +120,14 @@ export function DetailPanel({
                   </span>
                 )}
               </div>
-              {node.sublabel && <p className="mt-1 text-sm text-slate-500">{node.sublabel}</p>}
+              {node.sublabel && <p className="mt-1 break-words text-sm text-slate-500">{node.sublabel}</p>}
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 {typeof node.count === "number" && (
                   <span className="rounded-full bg-white px-2 py-1 font-semibold text-slate-700">
                     {node.count} items
                   </span>
                 )}
-                <span className="rounded-full bg-white px-2 py-1">ID: {node.id}</span>
+                <span className="max-w-full break-all rounded-full bg-white px-2 py-1">ID: {node.id}</span>
               </div>
             </div>
 

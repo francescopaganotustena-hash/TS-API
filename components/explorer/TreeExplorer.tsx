@@ -151,12 +151,12 @@ function TreeRow({
           {node.sublabel && <div className="truncate text-xs text-slate-500">{node.sublabel}</div>}
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           {node.rightMeta && (
-            <span className="text-[11px] font-mono text-slate-400">{node.rightMeta}</span>
+            <span className="max-w-[110px] truncate text-[11px] font-mono text-slate-400">{node.rightMeta}</span>
           )}
           {node.amount && (
-            <span className="text-[11px] font-mono text-slate-400">{node.amount}</span>
+            <span className="max-w-[90px] truncate text-[11px] font-mono text-slate-400">{node.amount}</span>
           )}
           {typeof node.count === "number" && (
             <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 tabular-nums">

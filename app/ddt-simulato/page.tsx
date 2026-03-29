@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 type Row = Record<string, unknown>;
 
@@ -51,7 +50,6 @@ function getByPath(source: Row, path: string): unknown {
 }
 
 export default function DdtSimulatoPage() {
-  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [header, setHeader] = useState<Row | null>(null);
@@ -60,10 +58,10 @@ export default function DdtSimulatoPage() {
   const [paramReady, setParamReady] = useState(false);
 
   useEffect(() => {
-    const value = searchParams.get("numReg")?.trim() ?? "";
+    const value = new URL(window.location.href).searchParams.get("numReg")?.trim() ?? "";
     setNumReg(value);
     setParamReady(true);
-  }, [searchParams]);
+  }, []);
 
   useEffect(() => {
     if (!paramReady) return;
