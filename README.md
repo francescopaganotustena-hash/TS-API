@@ -125,6 +125,7 @@ npm run start
 ## Documentazione completa
 
 - Stato operativo: `DEVELOPMENT_STATE.md`
+- Riferimento unico ambiente/API: `docs/AMBIENTE_UNICO_RIFERIMENTO.md`
 - Storia completa progetto: `docs/PROJECT_HISTORY_COMPLETE.md`
 - Readiness SQL Server: `docs/SQLSERVER_IMPLEMENTATION_READINESS.md`
 - Specifiche API: `docs/api-specs-summary.md`
