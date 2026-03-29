@@ -14,9 +14,48 @@ Variabili tipiche:
 - `GESTIONALE_USERNAME`
 - `GESTIONALE_PASSWORD`
 - `GESTIONALE_AUTH_SCOPE`
+- `SYNC_INCREMENTAL_ENABLED=false`
+- `SYNC_ON_DEMAND_ENABLED=false`
 - `SYNC_STORAGE_PROVIDER=sqlserver`
 - `SQLSERVER_CONNECTION_STRING`
 - `SQLSERVER_SCHEMA=dbo`
+
+### Sync incrementale
+
+La sincronizzazione incrementale e disattivata di default. Se `SYNC_INCREMENTAL_ENABLED=true`, la UI puo proporre la modalita incrementale e il backend prova a usare un delta basato sull'ultima sync riuscita.
+
+Rollback immediato:
+
+1. Imposta `SYNC_INCREMENTAL_ENABLED=false`.
+2. Avvia una sync completa manuale.
+3. Se necessario, forza `syncMode=full` nella richiesta `POST /api/sync/start`.
+
+Comportamento atteso dopo rollback:
+
+- il backend ignora le richieste incremental e torna al flusso completo;
+- i job in corso non cambiano modalita a meta esecuzione;
+- alla sync successiva i dati vengono riallineati con una full sync.
+
+### Scope-based sync MVP
+
+La UI supporta anche un primo MVP di sync per scope:
+
+- `scope=full` per la sync completa
+- `scope=resource` per una singola risorsa
+
+Il comportamento on-demand e preparato lato UI, ma resta disabilitato di default con `SYNC_ON_DEMAND_ENABLED=false`.
+
+Rollback immediato:
+
+1. Imposta `SYNC_ON_DEMAND_ENABLED=false`.
+2. Continua a usare `scope=full` per le sync manuali.
+3. Se serve, disabilita anche `SYNC_INCREMENTAL_ENABLED` per tornare al solo flusso completo.
+
+Comportamento atteso dopo rollback:
+
+- la UI resta compatibile con il selettore scope, ma le chiamate on-demand non vengono attivate;
+- il flusso operativo torna alla sync completa manuale;
+- eventuali marker on-demand esposti in futuro dall'API locale vengono semplicemente ignorati se non presenti.
 
 ## Avvio rapido
 
@@ -73,6 +112,15 @@ npm run start
 - Dati articolo senza codice:
   - verificare `cache_articoli.codice_articolo` in SQL
   - rilanciare sync completa se necessario
+
+## Checklist rollout / rollback
+
+1. Verifica `SYNC_INCREMENTAL_ENABLED=true` solo in ambiente controllato.
+2. Verifica `SYNC_ON_DEMAND_ENABLED=true` solo quando il backend sara pronto a supportare il scope mirato.
+3. Esegui una sync completa di baseline prima di usare l'incrementale.
+4. Controlla i job e i conteggi dopo il primo delta.
+5. Se qualcosa non torna, disabilita `SYNC_INCREMENTAL_ENABLED` o `SYNC_ON_DEMAND_ENABLED`.
+6. Rilancia una sync completa per riallineare cache e metadati.
 
 ## Documentazione completa
 

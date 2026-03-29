@@ -23,6 +23,8 @@ type ResourceConfig = {
 
 const SQLSERVER_CONNECTION_STRING = process.env.SQLSERVER_CONNECTION_STRING?.trim() ?? "";
 const SQLSERVER_SCHEMA = sanitizeIdentifier(process.env.SQLSERVER_SCHEMA?.trim() ?? "dbo") ?? "dbo";
+const SQLSERVER_REQUEST_TIMEOUT_MS = Number(process.env.SQLSERVER_REQUEST_TIMEOUT_MS ?? "300000");
+const SQLSERVER_CONNECTION_TIMEOUT_MS = Number(process.env.SQLSERVER_CONNECTION_TIMEOUT_MS ?? "30000");
 const RESOURCE_ORDER: SyncResource[] = ["clienti", "fornitori", "articoli", "ordini", "righeOrdine"];
 
 const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
@@ -297,6 +299,8 @@ function buildSqlConfig(connectionString: string): mssql.config {
   const config: mssql.config = {
     server,
     database,
+    requestTimeout: Number.isFinite(SQLSERVER_REQUEST_TIMEOUT_MS) ? Math.max(15000, Math.floor(SQLSERVER_REQUEST_TIMEOUT_MS)) : 300000,
+    connectionTimeout: Number.isFinite(SQLSERVER_CONNECTION_TIMEOUT_MS) ? Math.max(5000, Math.floor(SQLSERVER_CONNECTION_TIMEOUT_MS)) : 30000,
     options: {
       encrypt: toBool(parsed.encrypt, false),
       trustServerCertificate: toBool(parsed.trustservercertificate, true),
@@ -766,7 +770,15 @@ async function withReadyDb<T>(callback: (pool: SqlPool) => Promise<T>): Promise<
 
 function inferSqlType(sql: SqlModule, value: unknown): mssql.ISqlTypeFactoryWithNoParams | mssql.ISqlType {
   if (typeof value === "number") {
-    return Number.isInteger(value) ? sql.Int : (sql.Decimal(18, 6) as mssql.ISqlType);
+    if (Number.isInteger(value)) {
+      if (value >= -2147483648 && value <= 2147483647) {
+        return sql.Int;
+      }
+      if (Number.isSafeInteger(value)) {
+        return sql.BigInt;
+      }
+    }
+    return sql.Decimal(18, 6) as mssql.ISqlType;
   }
   if (typeof value === "boolean") return sql.Bit;
   if (value instanceof Date) return sql.DateTime2;
@@ -1033,6 +1045,7 @@ export async function queryLocalResource(
   const safePageSize = Math.max(1, Math.floor(pageSize));
   const offset = safePageNumber * safePageSize;
   const tableName = qualifiedName(SQLSERVER_SCHEMA, getTableName(resource));
+  const righeOrdineTableName = qualifiedName(SQLSERVER_SCHEMA, getTableName("righeOrdine"));
   const descriptors = buildResourceFilterDescriptors(resource, filters);
   const whereClause = descriptors.length > 0 ? `WHERE ${descriptors.map((d) => d.clause).join(" AND ")}` : "";
 
@@ -1052,15 +1065,35 @@ export async function queryLocalResource(
     dataRequest.input("offsetRows", sql.Int, offset);
     dataRequest.input("fetchRows", sql.Int, safePageSize);
 
+    const dataSql =
+      resource === "ordini"
+        ? `WITH page AS (
+             SELECT row_id, updated_at, raw_json, num_reg
+             FROM ${tableName}
+             ${whereClause}
+             ORDER BY row_id
+             OFFSET @offsetRows ROWS FETCH NEXT @fetchRows ROWS ONLY
+           )
+           SELECT
+             page.row_id,
+             page.updated_at,
+             page.raw_json,
+             totals.importo_righe
+           FROM page
+           OUTER APPLY (
+             SELECT SUM(TRY_CONVERT(DECIMAL(18,2), JSON_VALUE(r.raw_json, '$.importo'))) AS importo_righe
+             FROM ${righeOrdineTableName} AS r
+             WHERE r.num_reg = page.num_reg
+           ) AS totals`
+        : `SELECT row_id, updated_at, raw_json
+           FROM ${tableName}
+           ${whereClause}
+           ORDER BY row_id
+           OFFSET @offsetRows ROWS FETCH NEXT @fetchRows ROWS ONLY`;
+
     const [countResult, dataResult, meta] = await Promise.all([
       countRequest.query(`SELECT COUNT(1) AS total_count FROM ${tableName} ${whereClause}`),
-      dataRequest.query(
-        `SELECT row_id, updated_at, raw_json
-         FROM ${tableName}
-         ${whereClause}
-         ORDER BY row_id
-         OFFSET @offsetRows ROWS FETCH NEXT @fetchRows ROWS ONLY`
-      ),
+      dataRequest.query(dataSql),
       readResourceMeta(resource),
     ]);
 
@@ -1071,7 +1104,29 @@ export async function queryLocalResource(
       if (rawJson) {
         try {
           const parsed = JSON.parse(rawJson) as unknown;
-          if (parsed && typeof parsed === "object") return parsed as Record<string, unknown>;
+          if (parsed && typeof parsed === "object") {
+            const parsedRecord = parsed as Record<string, unknown>;
+            if (resource === "ordini") {
+              const computedAmountRaw = rec.importo_righe;
+              const computedAmount =
+                typeof computedAmountRaw === "number"
+                  ? computedAmountRaw
+                  : typeof computedAmountRaw === "string"
+                    ? Number(computedAmountRaw)
+                    : null;
+              if (
+                computedAmount !== null &&
+                Number.isFinite(computedAmount) &&
+                parsedRecord.importo === undefined &&
+                parsedRecord.costotot === undefined &&
+                parsedRecord.totale === undefined &&
+                parsedRecord.amount === undefined
+              ) {
+                parsedRecord.importo = computedAmount;
+              }
+            }
+            return parsedRecord;
+          }
         } catch {
           // Ignore parse error and fallback to flattened row.
         }
@@ -1141,8 +1196,6 @@ export async function updateSyncMeta(partial: Partial<SyncMeta>): Promise<SyncMe
 }
 
 export async function getSyncJob(jobId: string): Promise<SyncJob | null> {
-  if (jobCache.has(jobId)) return jobCache.get(jobId) ?? null;
-
   const rows = await runQuery<Record<string, unknown>>(
     `SELECT id, status, phase, progress_pct, processed, inserted, updated, errors, started_at, updated_at, ended_at, message
      FROM ${qualifiedName(SQLSERVER_SCHEMA, "sync_jobs")}
@@ -1151,7 +1204,11 @@ export async function getSyncJob(jobId: string): Promise<SyncJob | null> {
   );
 
   const job = rows[0] ? deserializeJob(rows[0]) : null;
-  if (job) jobCache.set(jobId, job);
+  if (job) {
+    jobCache.set(jobId, job);
+  } else {
+    jobCache.delete(jobId);
+  }
   return job;
 }
 

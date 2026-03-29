@@ -64,6 +64,12 @@ export async function listSyncJobs(limit = 20): Promise<SyncJob[]> {
   return sqlStore.listSyncJobs(limit);
 }
 
+export async function listActiveSyncJobs(limit = 20): Promise<SyncJob[]> {
+  assertSqlServerProvider();
+  const jobs = await sqlStore.listSyncJobs(limit);
+  return jobs.filter((job) => job.status === "running" || job.status === "queued");
+}
+
 export async function saveSyncJob(job: SyncJob): Promise<SyncJob> {
   assertSqlServerProvider();
   return sqlStore.saveSyncJob(job);

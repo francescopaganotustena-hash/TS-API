@@ -110,3 +110,70 @@ Analizzare il progetto TS-API Portal e recuperare le specifiche delle API dal ge
 
 ---
 *Attività completata con successo. Tutte le specifiche API sono state recuperate e documentate.*
+---
+
+## Nota Operativa: Incremental Sync e Rollback
+
+### Flag di configurazione
+
+- `SYNC_INCREMENTAL_ENABLED=false` di default.
+- `SYNC_ON_DEMAND_ENABLED=false` di default.
+- Se impostato a `true`, il backend puo esporre la modalita incrementale.
+- Se il flag e `false`, ogni richiesta incremental deve ricadere su una sync completa.
+- Il primo MVP scope-based riguarda solo `scope=resource`.
+
+### Strategia di rollback
+
+1. Disabilitare subito `SYNC_INCREMENTAL_ENABLED`.
+2. Forzare una sync completa manuale con `syncMode=full`.
+3. Considerare il job in corso come non modificabile: la modalita non cambia a runtime.
+4. Attendersi che il job successivo riallinei completamente cache e metadati.
+5. Disabilitare `SYNC_ON_DEMAND_ENABLED` se si vuole tornare al solo flusso manuale.
+
+### Checklist rapida
+
+1. Validare la baseline con una sync completa prima del rollout.
+2. Abilitare l'incrementale solo in ambiente controllato.
+3. Abilitare `SYNC_ON_DEMAND_ENABLED` solo dopo il supporto backend per lo scope mirato.
+4. Controllare conteggi e job history dopo il primo delta.
+5. In caso di anomalie, spegnere il flag e rilanciare una full sync.
+
+---
+
+## Data: 29 Marzo 2026
+
+### Stato Sviluppi - Sessione Operativa
+
+#### Sincronizzazione
+
+- Corretto `scope=resource + incremental` per usare baseline per-risorsa (`resources[resource].updatedAt`) con fallback controllato.
+- Corretto `scope=full + incremental`: ora considera anche baseline generate da sync ristrette; fallback full solo sulle risorse senza baseline valida.
+- Aggiornata UX pagina Sync:
+  - terminologia semplificata (`Ambito`, `Strategia sync`, `Differenziale`, `Ricarica completa`);
+  - tooltip informativi su `Ambito`, `Strategia`, `Overlap`;
+  - rimosso pulsante `Comprimi` in questo flusso;
+  - aggiunto pulsante `Torna alla home` in testata.
+- Gestito caso operativo di job "zombie" rimasto `running` dopo riavvii, con sblocco manuale e rilancio test.
+
+#### Explorer e Dati Documento
+
+- Risolto errore SQL su filtri numerici grandi (`numReg` oltre `INT`): binding ora usa `BIGINT` quando necessario.
+- Corretto mapping nominativo cliente/fornitore nei documenti:
+  - eliminata collisione `cliFor` vs `idCliFor`;
+  - risoluzione contestuale nome in vista clienti/fornitori.
+- Aggiunta visualizzazione nome accanto a `Cliente/Fornitore` nella lista documenti.
+- Abilitati importi documento anche quando la testata non li espone:
+  - calcolo da `righeOrdine` (somma `importo`) in lettura locale ordini.
+
+#### Simulazioni Documento
+
+- Aggiunta pagina `Fattura Simulata` con apertura in nuovo tab dal pannello dettaglio.
+- Aggiunta pagina `Ordine Simulato` con apertura in nuovo tab.
+- Aggiunta pagina `DDT Simulato` (fornitori) con apertura in nuovo tab.
+- Corretto errore di hydration nella pagina fattura simulata (gestione parametro `numReg` lato client con `useSearchParams`).
+
+#### Esito Verifiche
+
+- `npm run lint` superato dopo ogni modifica principale.
+- Verificata esecuzione reale di sync incrementali su risorse multiple.
+- Verificato fallback per-risorsa durante sync globale incrementale.

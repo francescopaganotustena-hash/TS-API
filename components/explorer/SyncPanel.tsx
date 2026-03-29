@@ -11,10 +11,15 @@ export interface SyncPanelProps {
   updated?: number;
   errors?: number;
   message?: string;
+  warning?: string | null;
+  contextSummary?: string;
   lastSyncedAt?: string | null;
   onSync: () => void;
+  onCancel?: () => void;
   disabled?: boolean;
+  cancelDisabled?: boolean;
   actionLabel?: string;
+  cancelLabel?: string;
   title?: string;
   description?: string;
   className?: string;
@@ -56,6 +61,19 @@ function formatTimestamp(value?: string | null): string | null {
   }).format(new Date(parsed));
 }
 
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function readCurrentPage(message?: string): number | null {
+  if (!message) return null;
+  const match = message.match(/pagina\s+(\d+)/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
 export function SyncPanel({
   status,
   phase,
@@ -65,10 +83,15 @@ export function SyncPanel({
   updated = 0,
   errors = 0,
   message,
+  warning,
+  contextSummary,
   lastSyncedAt,
   onSync,
+  onCancel,
   disabled,
+  cancelDisabled,
   actionLabel = "Sincronizza con gestionale",
+  cancelLabel = "Blocca sincronizzazione",
   title = "Sincronizzazione locale",
   description = "Aggiorna il database locale prima di navigare i dati nell'explorer.",
   className,
@@ -77,8 +100,10 @@ export function SyncPanel({
   onCollapsedChange,
 }: SyncPanelProps) {
   const style = STATUS_STYLES[status];
-  const percent = Math.max(0, Math.min(100, Math.round(progress || 0)));
+  const percent = clampPercent(Number(progress ?? 0));
+  const percentLabel = `${percent.toFixed(1)}%`;
   const lastSyncLabel = formatTimestamp(lastSyncedAt);
+  const currentPage = readCurrentPage(message);
 
   if (collapsed) {
     return (
@@ -94,6 +119,21 @@ export function SyncPanel({
             <p className="mt-1 text-xs text-slate-500">
               {lastSyncLabel ? `Ultima sincronizzazione: ${lastSyncLabel}` : "Nessuna sincronizzazione completata"}
             </p>
+            {contextSummary && <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">{contextSummary}</p>}
+            {(warning || message) && (
+              <div className="mt-2 space-y-2">
+                {warning && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-100">
+                    {warning}
+                  </div>
+                )}
+                {message && (
+                  <div className={["rounded-xl px-3 py-2 text-xs ring-1", style.ring].join(" ")}>
+                    {message}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -103,6 +143,16 @@ export function SyncPanel({
             >
               Dettagli
             </button>
+            {status === "running" && onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={cancelDisabled}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {cancelLabel}
+              </button>
+            )}
             <button
               type="button"
               onClick={onSync}
@@ -131,17 +181,30 @@ export function SyncPanel({
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
             <span>Fase: {phase ?? "Attesa"}</span>
             {lastSyncLabel && <span>Ultima sincronizzazione: {lastSyncLabel}</span>}
+            {contextSummary && <span>{contextSummary}</span>}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onCollapsedChange?.(true)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-          >
-            Comprimi
-          </button>
+          {onCollapsedChange && (
+            <button
+              type="button"
+              onClick={() => onCollapsedChange(true)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              Comprimi
+            </button>
+          )}
+          {status === "running" && onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={cancelDisabled}
+              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cancelLabel}
+            </button>
+          )}
           {extraActions}
           <button
             type="button"
@@ -157,20 +220,36 @@ export function SyncPanel({
       <div className="mt-4">
         <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
           <div
-            className={["h-full rounded-full transition-all duration-300", style.bar].join(" ")}
+            className={["h-full rounded-full transition-all duration-500", style.bar, status === "running" ? "animate-pulse" : ""].join(" ")}
             style={{ width: `${percent}%` }}
           />
         </div>
         <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500">
-          <span>{percent}%</span>
+          <span>{percentLabel}</span>
+          {status === "running" && (
+            <span className="inline-flex items-center gap-1 text-amber-700">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              Attivita in corso
+            </span>
+          )}
+          {status === "running" && currentPage && <span>Pagina {currentPage}</span>}
           <span>Processati {processed}</span>
           <span>Inseriti {inserted}</span>
           <span>Aggiornati {updated}</span>
           <span>Errori {errors}</span>
         </div>
-        {message && (
-          <div className={["mt-3 rounded-xl px-3 py-2 text-sm ring-1", style.ring].join(" ")}>
-            {message}
+        {(warning || message) && (
+          <div className="mt-3 space-y-2">
+            {warning && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-100">
+                {warning}
+              </div>
+            )}
+            {message && (
+              <div className={["rounded-xl px-3 py-2 text-sm ring-1", style.ring].join(" ")}>
+                {message}
+              </div>
+            )}
           </div>
         )}
       </div>

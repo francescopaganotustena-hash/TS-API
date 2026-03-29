@@ -1,4 +1,13 @@
 export type SyncResource = "clienti" | "fornitori" | "articoli" | "ordini" | "righeOrdine";
+export type SyncMode = "full" | "incremental";
+export type SyncScopeType = "full" | "resource";
+export type SyncTrigger = "manual" | "read-through";
+
+export interface SyncScope {
+  type: SyncScopeType;
+  resource?: SyncResource;
+  trigger?: SyncTrigger;
+}
 
 export type SyncJobStatus = "queued" | "running" | "success" | "failed" | "cancelled";
 
@@ -25,6 +34,9 @@ export interface SyncJobConfig {
   azienda: string;
   pageSize: number;
   maxPages: number;
+  syncMode: SyncMode;
+  overlapHours?: number;
+  scope?: SyncScope;
 }
 
 export interface LocalResourceSnapshot {
@@ -67,4 +79,8 @@ export function getResourceLabel(resource: SyncResource): string {
     case "righeOrdine":
       return "Righe ordine";
   }
+}
+
+export function isResourceSyncScope(scope?: SyncScope): scope is SyncScope & { type: "resource"; resource: SyncResource } {
+  return !!scope && scope.type === "resource" && !!scope.resource;
 }

@@ -1,10 +1,11 @@
-﻿"use client";
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ResourceType } from "@/lib/api";
 import {
   buildExplorerTree,
+  classifyDocumentType,
   buildNodeDetails,
   buildResourceStats,
   groupDocumentsByClass,
@@ -19,13 +20,17 @@ import type { DetailField, ExplorerResource, ExplorerStatus, TreeNode } from "@/
 type MainResource = "clienti" | "fornitori" | "articoli" | "ordini";
 type Row = Record<string, unknown>;
 type DataByResource = Partial<Record<MainResource, Row[]>>;
-type SyncStatus = "idle" | "running" | "success" | "failed";
+type PartyNameIndex = {
+  clienti: Map<string, string>;
+  fornitori: Map<string, string>;
+};
 
 interface SearchContext {
   ambiente: string;
   utente: string;
   azienda: string;
   pageSize: number;
+  maxPages: number;
 }
 
 const DEFAULT_CONTEXT: SearchContext = {
@@ -33,6 +38,7 @@ const DEFAULT_CONTEXT: SearchContext = {
   utente: "TeamSa",
   azienda: "1",
   pageSize: 100,
+  maxPages: 1000,
 };
 
 const RESOURCE_META: Record<MainResource, { title: string; description: string; searchPlaceholder: string }> = {
@@ -88,6 +94,36 @@ function asText(value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined;
   const text = String(value).trim();
   return text.length > 0 ? text : undefined;
+}
+
+function isInvoiceNode(node: TreeNode | null): boolean {
+  if (!node || !node.raw || typeof node.raw !== "object") return false;
+  const raw = node.raw as Row;
+  const tipodoc = asText(getByPath(raw, "tipodoc")) ?? asText(getByPath(raw, "tipoDocumento"));
+  const typeInfo = classifyDocumentType(tipodoc);
+  return typeInfo.key === "fatture";
+}
+
+function isOrderNode(node: TreeNode | null): boolean {
+  if (!node || !node.raw || typeof node.raw !== "object") return false;
+  const raw = node.raw as Row;
+  const tipodoc = asText(getByPath(raw, "tipodoc")) ?? asText(getByPath(raw, "tipoDocumento"));
+  const typeInfo = classifyDocumentType(tipodoc);
+  return typeInfo.key === "ordini";
+}
+
+function isDdtNode(node: TreeNode | null): boolean {
+  if (!node || !node.raw || typeof node.raw !== "object") return false;
+  const raw = node.raw as Row;
+  const tipodoc = asText(getByPath(raw, "tipodoc")) ?? asText(getByPath(raw, "tipoDocumento"));
+  const typeInfo = classifyDocumentType(tipodoc);
+  return typeInfo.key === "ddt";
+}
+
+function getNodeNumReg(node: TreeNode | null): string | undefined {
+  if (!node || !node.raw || typeof node.raw !== "object") return undefined;
+  const raw = node.raw as Row;
+  return asText(getByPath(raw, "numReg")) ?? asText(getByPath(raw, "numreg"));
 }
 
 function getByPath(source: Row, path: string): unknown {
@@ -228,7 +264,6 @@ function filterDocsByOwner(rows: Row[], ownerCode: string): Row[] {
       asText(getByPath(row, "cliforfatt")),
       asText(getByPath(row, "cliForDest")),
       asText(getByPath(row, "clienteFornitoreMG.cliFor")),
-      asText(getByPath(row, "clienteFornitoreMG.idCliFor")),
     ].filter(Boolean) as string[];
 
     return candidates.some((candidate) => normalizePartyCode(candidate) === wanted);
@@ -336,6 +371,98 @@ function normalizeDocumentNodes(nodes: TreeNode[]): TreeNode[] {
       .trim(),
     children: node.children ? normalizeDocumentNodes(node.children) : undefined,
   }));
+}
+
+function resolvePartyCode(row: Row): string | undefined {
+  return (
+    asText(getByPath(row, "cliforfatt")) ??
+    asText(getByPath(row, "cliForDest")) ??
+    asText(getByPath(row, "clienteFornitoreMG.cliFor"))
+  );
+}
+
+function resolvePartyName(row: Row): string | undefined {
+  return (
+    asText(getByPath(row, "anagrafica.ragioneSociale")) ??
+    asText(getByPath(row, "ragioneSociale")) ??
+    asText(getByPath(row, "denominazione")) ??
+    asText(getByPath(row, "nome"))
+  );
+}
+
+function buildPartyNameIndex(dataByResource: DataByResource): PartyNameIndex {
+  const clienti = new Map<string, string>();
+  const fornitori = new Map<string, string>();
+
+  const addFromRows = (rows: Row[] | undefined, target: Map<string, string>) => {
+    if (!rows?.length) return;
+    for (const row of rows) {
+      const name = resolvePartyName(row);
+      if (!name) continue;
+      const codeCandidates = [
+        asText(getByPath(row, "cliFor")),
+        asText(getByPath(row, "clienteFornitoreMG.cliFor")),
+      ];
+      for (const candidate of codeCandidates) {
+        const key = normalizePartyCode(candidate);
+        if (!key) continue;
+        if (!target.has(key)) {
+          target.set(key, name);
+        }
+      }
+    }
+  };
+
+  addFromRows(dataByResource.clienti, clienti);
+  addFromRows(dataByResource.fornitori, fornitori);
+  return { clienti, fornitori };
+}
+
+function resolvePartyNameForContext(
+  partyNameIndex: PartyNameIndex,
+  normalizedCode: string,
+  context: MainResource
+): string | undefined {
+  const customerName = partyNameIndex.clienti.get(normalizedCode);
+  const supplierName = partyNameIndex.fornitori.get(normalizedCode);
+
+  if (context === "fornitori") {
+    return supplierName ?? customerName;
+  }
+  if (context === "clienti") {
+    return customerName ?? supplierName;
+  }
+  if (customerName && supplierName && customerName !== supplierName) {
+    return `${customerName} / ${supplierName}`;
+  }
+  return customerName ?? supplierName;
+}
+
+function enrichDocumentNodesWithPartyName(
+  nodes: TreeNode[],
+  partyNameIndex: PartyNameIndex,
+  context: MainResource
+): TreeNode[] {
+  return nodes.map((node) => {
+    const raw = (node.raw ?? {}) as Row;
+    const code = resolvePartyCode(raw);
+    const normalizedCode = normalizePartyCode(code);
+    const partyName = normalizedCode ? resolvePartyNameForContext(partyNameIndex, normalizedCode, context) : undefined;
+
+    let sublabel = node.sublabel;
+    if (partyName && sublabel) {
+      sublabel = sublabel.replace(
+        /(Cliente\/Fornitore\s+[^|()]+)(?:\s*\([^)]*\))?/i,
+        (_segment, base) => `${base} (${partyName})`
+      );
+    }
+
+    return {
+      ...node,
+      sublabel,
+      children: node.children ? enrichDocumentNodesWithPartyName(node.children, partyNameIndex, context) : undefined,
+    };
+  });
 }
 
 function collectExpandableIds(nodes: TreeNode[]): string[] {
@@ -456,23 +583,6 @@ async function fetchAllPages(
   return all;
 }
 
-type SyncJobStatus = SyncStatus;
-
-interface SyncJobPayload {
-  jobId?: string;
-  id?: string;
-  status?: SyncJobStatus | string;
-  phase?: string;
-  progressPct?: number;
-  progress?: number;
-  processed?: number;
-  inserted?: number;
-  updated?: number;
-  errors?: number;
-  message?: string;
-  lastSyncedAt?: string;
-}
-
 async function fetchLocalMeta(): Promise<{ lastSyncedAt?: string; message?: string }> {
   const response = await fetch("/api/local/meta", {
     method: "GET",
@@ -492,53 +602,6 @@ async function fetchLocalMeta(): Promise<{ lastSyncedAt?: string; message?: stri
   return (payload && typeof payload === "object" ? payload : {}) as { lastSyncedAt?: string; message?: string };
 }
 
-async function startLocalSyncJob(context: SearchContext): Promise<SyncJobPayload> {
-  const response = await fetch("/api/sync/start", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(context),
-  });
-
-  const payload = await parseJsonOrText<SyncJobPayload & { error?: string }>(response);
-  const error =
-    typeof payload === "string"
-      ? payload
-      : payload && typeof payload === "object" && !Array.isArray(payload)
-        ? payload.error
-        : undefined;
-  if (!response.ok || error) {
-    throw new Error(error || response.statusText || "Impossibile avviare la sincronizzazione");
-  }
-
-  return (payload && typeof payload === "object" ? payload : {}) as SyncJobPayload;
-}
-
-async function readSyncJob(jobId: string): Promise<SyncJobPayload> {
-  const response = await fetch(`/api/sync/status/${encodeURIComponent(jobId)}`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-
-  const payload = await parseJsonOrText<SyncJobPayload & { error?: string }>(response);
-  const error =
-    typeof payload === "string"
-      ? payload
-      : payload && typeof payload === "object" && !Array.isArray(payload)
-        ? payload.error
-        : undefined;
-  if (!response.ok || error) {
-    throw new Error(error || response.statusText || "Impossibile leggere lo stato della sincronizzazione");
-  }
-
-  return (payload && typeof payload === "object" ? payload : {}) as SyncJobPayload;
-}
-
-function normalizeSyncStatus(status?: string): SyncStatus {
-  if (status === "running" || status === "success" || status === "failed") return status;
-  if (status === "queued") return "running";
-  return "idle";
-}
-
 export default function Home() {
   const router = useRouter();
   const [searchContext] = useState<SearchContext>(DEFAULT_CONTEXT);
@@ -551,20 +614,13 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
-  const [syncPhase, setSyncPhase] = useState<string>("Pronto");
-  const [syncProgress, setSyncProgress] = useState(0);
-  const [, setSyncProcessed] = useState(0);
-  const [, setSyncInserted] = useState(0);
-  const [, setSyncUpdated] = useState(0);
-  const [, setSyncErrors] = useState(0);
+  const [refreshTick] = useState(0);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [loadedDocumentsFor, setLoadedDocumentsFor] = useState<string[]>([]);
   const [loadedDestinatariFor, setLoadedDestinatariFor] = useState<string[]>([]);
   const [loadedRowsFor, setLoadedRowsFor] = useState<string[]>([]);
-  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const partyNameByCode = useMemo(() => buildPartyNameIndex(dataByResource), [dataByResource]);
 
   const activeMeta = RESOURCE_META[activeResource];
 
@@ -616,13 +672,6 @@ export default function Home() {
     setDataByResource((prev) => ({ ...prev, ...nextData }));
   }, [searchContext]);
 
-  const clearSyncTimer = useCallback(() => {
-    if (syncTimerRef.current) {
-      clearTimeout(syncTimerRef.current);
-      syncTimerRef.current = null;
-    }
-  }, []);
-
   const refreshSyncMeta = useCallback(async () => {
     try {
       const meta = await fetchLocalMeta();
@@ -632,82 +681,6 @@ export default function Home() {
       // Non blocchiamo l'app se i metadati non sono disponibili.
     }
   }, []);
-
-  const refreshAfterSync = useCallback(async () => {
-    await refreshSyncMeta();
-    setRefreshTick((current) => current + 1);
-  }, [refreshSyncMeta]);
-
-  const pollSyncJob = useCallback(
-    async (jobId: string) => {
-      clearSyncTimer();
-
-      const tick = async () => {
-        try {
-          const job = await readSyncJob(jobId);
-          const status = normalizeSyncStatus(job.status ?? "running");
-          setSyncStatus(status);
-          setSyncPhase(job.phase ?? "Sincronizzazione");
-          setSyncProgress(Number(job.progressPct ?? job.progress ?? 0));
-          setSyncProcessed(Number(job.processed ?? 0));
-          setSyncInserted(Number(job.inserted ?? 0));
-          setSyncUpdated(Number(job.updated ?? 0));
-          setSyncErrors(Number(job.errors ?? 0));
-          if (job.message) setSyncMessage(job.message);
-          if (job.lastSyncedAt) setLastSyncedAt(job.lastSyncedAt);
-
-          if (status === "success") {
-            setSyncMessage(job.message ?? "Sincronizzazione completata");
-            clearSyncTimer();
-            await refreshAfterSync();
-            return;
-          }
-
-          if (status === "failed") {
-            setSyncMessage(job.message ?? "Sincronizzazione fallita");
-            clearSyncTimer();
-            return;
-          }
-
-          syncTimerRef.current = setTimeout(tick, 1000);
-        } catch (err) {
-          setSyncStatus("failed");
-          setSyncMessage(err instanceof Error ? err.message : "Errore nel polling della sincronizzazione");
-          clearSyncTimer();
-        }
-      };
-
-      await tick();
-    },
-    [clearSyncTimer, refreshAfterSync]
-  );
-
-  const handleStartSync = useCallback(async () => {
-    if (syncStatus === "running") return;
-
-    clearSyncTimer();
-    setSyncStatus("running");
-    setSyncPhase("Avvio sincronizzazione");
-    setSyncProgress(4);
-    setSyncProcessed(0);
-    setSyncInserted(0);
-    setSyncUpdated(0);
-    setSyncErrors(0);
-    setSyncMessage("Richiesta di sincronizzazione inviata al gestionale locale");
-    try {
-      const job = await startLocalSyncJob(searchContext);
-      const jobId = job.jobId ?? job.id;
-      if (!jobId) {
-        throw new Error("Il job di sincronizzazione non ha restituito un identificativo");
-      }
-      await pollSyncJob(jobId);
-    } catch (err) {
-      setSyncStatus("failed");
-      setSyncPhase("Sincronizzazione non avviata");
-      setSyncMessage(err instanceof Error ? err.message : "Errore imprevisto durante l'avvio");
-      clearSyncTimer();
-    }
-  }, [clearSyncTimer, pollSyncJob, searchContext, syncStatus]);
 
   const loadResource = useCallback(
     async (resource: MainResource, filters: Record<string, string> = {}) => {
@@ -735,7 +708,11 @@ export default function Home() {
             : resource === "articoli"
               ? mapArticleNodes(effectiveRows)
             : resource === "ordini"
-              ? normalizeDocumentNodes(mapLibNodes(buildExplorerTree(resource, effectiveRows)))
+              ? enrichDocumentNodesWithPartyName(
+                  normalizeDocumentNodes(mapLibNodes(buildExplorerTree(resource, effectiveRows))),
+                  partyNameByCode,
+                  resource
+                )
               : mapLibNodes(buildExplorerTree(resource, effectiveRows));
 
         setTreeNodes(mappedNodes);
@@ -746,7 +723,7 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [dataByResource, searchContext]
+    [dataByResource, partyNameByCode, searchContext]
   );
 
   useEffect(() => {
@@ -769,8 +746,6 @@ export default function Home() {
 
     return () => clearTimeout(timeout);
   }, [activeResource, loadResource, refreshTick, searchQuery]);
-
-  useEffect(() => () => clearSyncTimer(), [clearSyncTimer]);
 
   const enrichNodeOnDemand = useCallback(
     async (node: TreeNode) => {
@@ -834,7 +809,11 @@ export default function Home() {
 
         const classFolders =
           docs.length > 0
-            ? normalizeDocumentNodes(mapLibNodes(groupDocumentsByClass(docs, `${partyRootId}:documenti`)))
+            ? enrichDocumentNodesWithPartyName(
+                normalizeDocumentNodes(mapLibNodes(groupDocumentsByClass(docs, `${partyRootId}:documenti`))),
+                partyNameByCode,
+                activeResource
+              )
             : getInitialDocumentClassFolders(`${partyRootId}:documenti`);
         const groupId = `${partyRootId}:documenti`;
 
@@ -994,7 +973,7 @@ export default function Home() {
         setLoadedRowsFor((prev) => [...prev, node.id]);
       }
     },
-    [activeResource, loadedDestinatariFor, loadedDocumentsFor, loadedRowsFor, searchContext]
+    [activeResource, loadedDestinatariFor, loadedDocumentsFor, loadedRowsFor, partyNameByCode, searchContext]
   );
 
   const handleNodeSelect = useCallback(
@@ -1016,6 +995,27 @@ export default function Home() {
     };
   }, [selectedNode, activeResource]);
 
+  const simulatedInvoiceLink = useMemo(() => {
+    if (!isInvoiceNode(detailNode)) return null;
+    const numReg = getNodeNumReg(detailNode);
+    if (!numReg) return null;
+    return `/fattura-simulata?numReg=${encodeURIComponent(numReg)}`;
+  }, [detailNode]);
+
+  const simulatedOrderLink = useMemo(() => {
+    if (!isOrderNode(detailNode)) return null;
+    const numReg = getNodeNumReg(detailNode);
+    if (!numReg) return null;
+    return `/ordine-simulato?numReg=${encodeURIComponent(numReg)}`;
+  }, [detailNode]);
+
+  const simulatedDdtLink = useMemo(() => {
+    if (!isDdtNode(detailNode)) return null;
+    const numReg = getNodeNumReg(detailNode);
+    if (!numReg) return null;
+    return `/ddt-simulato?numReg=${encodeURIComponent(numReg)}`;
+  }, [detailNode]);
+
   const rootCount = dataByResource[activeResource]?.length ?? treeNodes.length;
 
   return (
@@ -1036,15 +1036,12 @@ export default function Home() {
               setActiveResource(resourceId as MainResource);
             }}
             onSyncAction={() => {
-              void handleStartSync();
               router.push("/sync");
             }}
-            syncActionDisabled={isLoading || syncStatus === "running"}
-            syncActionLabel={syncStatus === "running" ? `Sincronizzazione ${Math.round(syncProgress)}%` : "Sincronizza dati"}
+            syncActionDisabled={isLoading}
+            syncActionLabel="Vai a sincronizzazione"
             syncActionStatus={
-              syncStatus === "running"
-                ? `${syncPhase} • ${Math.round(syncProgress)}%`
-                : syncMessage ?? (lastSyncedAt ? `Ultima sync ${toDisplayDate(lastSyncedAt)}` : undefined)
+              syncMessage ?? (lastSyncedAt ? `Ultima sync ${toDisplayDate(lastSyncedAt)}` : undefined)
             }
             className="h-full"
           />
@@ -1094,6 +1091,40 @@ export default function Home() {
               subtitle="Dettaglio nodo selezionato"
               emptyTitle="Seleziona un elemento"
               emptyDescription="Il pannello mostra i campi principali e i dati raw del nodo selezionato."
+              actions={
+                <div className="flex items-center gap-2">
+                  {simulatedInvoiceLink && (
+                    <a
+                      href={simulatedInvoiceLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Fattura Simulata
+                    </a>
+                  )}
+                  {simulatedOrderLink && (
+                    <a
+                      href={simulatedOrderLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      Ordine Simulato
+                    </a>
+                  )}
+                  {simulatedDdtLink && (
+                    <a
+                      href={simulatedDdtLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900"
+                    >
+                      DDT Simulato
+                    </a>
+                  )}
+                </div>
+              }
             />
           </div>
         </div>
@@ -1101,4 +1132,5 @@ export default function Home() {
     </main>
   );
 }
+
 
