@@ -1,7 +1,7 @@
 ﻿# Stato Sviluppo TS-API (Handover Unico)
 
 Ultimo aggiornamento: 2026-03-28
-Workspace: `C:\TS-API`
+Workspace: `<PROJECT_ROOT>`
 Obiettivo progetto: frontend unico per interrogare API Alyante/gestionale su Clienti, Fornitori, Articoli, Ordini con filtri user-friendly e risultati leggibili.
 
 ## Documentazione completa di continuita
@@ -167,10 +167,10 @@ Le tabelle risultati sono ordinabili cliccando l'intestazione colonna.
 
 ## 9) File principali modificati
 
-- `C:\TS-API\lib\api.ts`
-- `C:\TS-API\app\api\dati\route.ts`
-- `C:\TS-API\components\SearchForm.tsx`
-- `C:\TS-API\components\DataTable.tsx`
+- `<PROJECT_ROOT>\lib\api.ts`
+- `<PROJECT_ROOT>\app\api\dati\route.ts`
+- `<PROJECT_ROOT>\components\SearchForm.tsx`
+- `<PROJECT_ROOT>\components\DataTable.tsx`
 
 ## 10) Verifiche effettuate (stato attuale)
 
@@ -188,14 +188,14 @@ Verificata anche ricerca estesa su nome/descrizione con fallback attivo.
 1. Avvio:
 
 ```powershell
-cd C:\TS-API
+cd <PROJECT_ROOT>
 npm run dev -p 3000
 ```
 
 Avvio robusto consigliato (pulizia automatica cache `.next`):
 
 ```powershell
-cd C:\TS-API
+cd <PROJECT_ROOT>
 npm run dev:clean -- -p 3000
 ```
 
@@ -497,9 +497,9 @@ Data aggiornamento: 2026-03-27
 
 ### File toccati in questo step
 
-- `C:\\TS-API\\app\\page.tsx`
-- `C:\\TS-API\\components\\DataTable.tsx`
-- `C:\\TS-API\\lib\\api.ts`
+- `<PROJECT_ROOT>\\app\\page.tsx`
+- `<PROJECT_ROOT>\\components\\DataTable.tsx`
+- `<PROJECT_ROOT>\\lib\\api.ts`
 
 ## 23) Stato sospensione
 
@@ -533,10 +533,10 @@ Data aggiornamento: 2026-03-27
 
 ### File toccati in questo step
 
-- `C:\\TS-API\\app\\page.tsx`
-- `C:\\TS-API\\components\\DataTable.tsx`
-- `C:\\TS-API\\lib\\api.ts`
-- `C:\\TS-API\\app\\api\\dati\\route.ts`
+- `<PROJECT_ROOT>\\app\\page.tsx`
+- `<PROJECT_ROOT>\\components\\DataTable.tsx`
+- `<PROJECT_ROOT>\\lib\\api.ts`
+- `<PROJECT_ROOT>\\app\\api\\dati\\route.ts`
 
 ## 25) Verifica runtime locale (2026-03-28)
 

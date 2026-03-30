@@ -98,7 +98,7 @@ export default function SyncPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
-  const [syncMode, setSyncMode] = useState<SyncMode>("incremental");
+  const [syncMode, setSyncMode] = useState<SyncMode>("full");
   const [overlapHours, setOverlapHours] = useState<number>(24);
   const [syncScope, setSyncScope] = useState<SyncScope>("full");
   const [syncScopeResource, setSyncScopeResource] = useState<(typeof RESOURCE_OPTIONS)[number]["value"]>("clienti");

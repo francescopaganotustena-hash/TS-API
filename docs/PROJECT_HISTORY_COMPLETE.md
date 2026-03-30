@@ -1,7 +1,7 @@
 # TS-API - Storia Completa Sviluppo (Dettagliata)
 
 Ultimo aggiornamento: 2026-03-28  
-Workspace: `C:\TS-API`  
+Workspace: `<PROJECT_ROOT>`  
 Repository attivo: `https://github.com/francescopaganotustena-hash/TS-API`
 
 ## 1) Obiettivo Progetto
@@ -274,7 +274,7 @@ Documentazione:
 ### Avvio locale
 
 ```powershell
-cd C:\TS-API
+cd <PROJECT_ROOT>
 npm run build
 npm run start
 ```

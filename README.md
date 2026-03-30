@@ -60,7 +60,7 @@ Comportamento atteso dopo rollback:
 ## Avvio rapido
 
 ```powershell
-cd C:\TS-API
+cd <PROJECT_ROOT>
 npm install
 npm run build
 npm run start
@@ -99,7 +99,7 @@ Invoke-RestMethod "http://localhost:3000/api/local/meta"
 - UI vuota o incoerente:
 ```powershell
 Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
-cd C:\TS-API
+cd <PROJECT_ROOT>
 npm run build
 npm run start
 ```

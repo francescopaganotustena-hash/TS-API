@@ -193,9 +193,7 @@ const RESOURCE_CONFIGS: Record<SyncResource, ResourceConfig> = {
       num_doc: toNullableString(getFirstPathValue(row, "numdoc", "numDoc", "num_doc", "numeroDocumento")),
       tipo_doc: toNullableString(getFirstPathValue(row, "tipodoc", "tipoDoc", "tipo_doc", "tipoDocumento")),
       sez_doc: toNullableString(getFirstPathValue(row, "sezdoc", "sezDoc", "sez_doc", "sezione")),
-      cli_for_fatt: toNullableInt(
-        getFirstPathValue(row, "cliforfatt", "cliForFatt", "cli_for_fatt", "clienteFornitoreMG.cliFor")
-      ),
+      cli_for_fatt: toNullableInt(getFirstPathValue(row, "cliforfatt", "cliForFatt", "cli_for_fatt")),
       cli_for_dest: toNullableInt(getFirstPathValue(row, "cliForDest", "cli_for_dest")),
       data_doc: toSqlDate(getFirstPathValue(row, "datadoc", "dataDoc", "data_doc") ?? syncTime),
       updated_at: toSqlDate(syncTime),
@@ -1164,6 +1162,9 @@ export async function queryLocalResource(
               ) {
                 parsedRecord.importo = computedAmount;
               }
+              // Inject reliable INT columns so client-side filtering works regardless of raw_json field name variants
+              if (rec.cli_for_fatt != null) parsedRecord._cliForFatt = Number(rec.cli_for_fatt);
+              if (rec.cli_for_dest != null) parsedRecord._cliForDest = Number(rec.cli_for_dest);
             }
             return parsedRecord;
           }

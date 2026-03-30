@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ResourceType } from "@/lib/api";
 import {
@@ -213,11 +213,6 @@ function normalizePartyCode(value?: string): string {
   return stripped.replace(/^0+/, "") || stripped;
 }
 
-function normalizePartyName(value?: string): string {
-  if (!value) return "";
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
 function getInitialDocumentClassFolders(parentId: string): TreeNode[] {
   const makePlaceholder = (folderId: string): TreeNode => ({
     id: `${folderId}:placeholder`,
@@ -260,43 +255,23 @@ function getInitialDocumentClassFolders(parentId: string): TreeNode[] {
   ];
 }
 
-function filterDocsByOwner(
-  rows: Row[],
-  ownerCode: string,
-  perspective: "clienti" | "fornitori",
-  ownerName?: string
-): Row[] {
+function filterDocsByOwnerCode(rows: Row[], ownerCode: string): Row[] {
   const wanted = normalizePartyCode(ownerCode);
-  if (!wanted) return rows;
-  const expectedType = perspective === "fornitori" ? 1 : 0;
-  const wantedName = normalizePartyName(ownerName);
+  if (!wanted) return [];
 
   return rows.filter((row) => {
-    const candidates =
-      perspective === "fornitori"
-        ? [asText(getByPath(row, "cliforfatt")), asText(getByPath(row, "clienteFornitoreMG.cliFor"))]
-        : [asText(getByPath(row, "cliForDest")), asText(getByPath(row, "clienteFornitoreMG.cliFor")), asText(getByPath(row, "cliforfatt"))];
-    const codeMatches = (candidates.filter(Boolean) as string[]).some((candidate) => normalizePartyCode(candidate) === wanted);
-    if (!codeMatches) return false;
-
-    const rawType = asText(getByPath(row, "clienteFornitoreMG.tipoCf")) ?? asText(getByPath(row, "clienteFornitoreMG.tipocfCg40"));
-    const parsedType = rawType === "" ? NaN : Number(rawType);
-    if (Number.isFinite(parsedType)) {
-      return Math.trunc(parsedType) === expectedType;
-    }
-
-    if (wantedName) {
-      const rowName =
-        asText(getByPath(row, "clienteFornitoreMG.anagrafica.ragioneSociale")) ??
-        asText(getByPath(row, "clienteFornitoreMG.anagrafica.denominazione")) ??
-        asText(getByPath(row, "ragioneSociale"));
-      const normalizedRowName = normalizePartyName(rowName);
-      if (normalizedRowName) {
-        return normalizedRowName === wantedName;
-      }
-    }
-
-    return true;
+    const codeCandidates = [
+      asText(getByPath(row, "_cliForFatt")),
+      asText(getByPath(row, "_cliForDest")),
+      asText(getByPath(row, "clienteFornitoreMG.cliFor")),
+      asText(getByPath(row, "clienteFornitoreMG.idCliFor")),
+      asText(getByPath(row, "cliforfatt")),
+      asText(getByPath(row, "cliForFatt")),
+      asText(getByPath(row, "cliForDest")),
+      asText(getByPath(row, "idCliFor")),
+      asText(getByPath(row, "cliFor")),
+    ];
+    return codeCandidates.some((code) => normalizePartyCode(code) === wanted);
   });
 }
 
@@ -505,6 +480,30 @@ function collectExpandableIds(nodes: TreeNode[]): string[] {
   return ids;
 }
 
+function dedupeDocs(rows: Row[]): Row[] {
+  const seen = new Set<string>();
+  const out: Row[] = [];
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const compositeKey = [
+      asText(getByPath(row, "sezdoc")) ?? "",
+      asText(getByPath(row, "numdoc")) ?? "",
+      asText(getByPath(row, "tipodoc")) ?? "",
+    ].join(":");
+    const key =
+      asText(getByPath(row, "numReg")) ??
+      asText(getByPath(row, "guid")) ??
+      (compositeKey || `row:${index}`);
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+
+  return out;
+}
+
 function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
   for (const node of nodes) {
     if (node.id === id) return node;
@@ -514,6 +513,13 @@ function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
     }
   }
   return null;
+}
+
+function nodeHasDocumentPlaceholder(node: TreeNode | null): boolean {
+  if (!node) return false;
+  if (node.id.endsWith(":placeholder")) return true;
+  if (!node.children?.length) return false;
+  return node.children.some((child) => nodeHasDocumentPlaceholder(child));
 }
 
 function patchNode(nodes: TreeNode[], targetId: string, update: (node: TreeNode) => TreeNode): TreeNode[] {
@@ -650,6 +656,7 @@ export default function Home() {
   const [loadedDocumentsFor, setLoadedDocumentsFor] = useState<string[]>([]);
   const [loadedDestinatariFor, setLoadedDestinatariFor] = useState<string[]>([]);
   const [loadedRowsFor, setLoadedRowsFor] = useState<string[]>([]);
+  const allOrdersCacheRef = useRef<Row[] | null>(null);
   const partyNameByCode = useMemo(() => buildPartyNameIndex(dataByResource), [dataByResource]);
 
   const activeMeta = RESOURCE_META[activeResource];
@@ -783,22 +790,39 @@ export default function Home() {
       const isPartyResource = activeResource === "clienti" || activeResource === "fornitori";
       const isPartyRoot = node.id.split(":").length === 2;
       const isDocumentsGroup = node.id.endsWith(":documenti");
+      const isDocumentSubGroup = node.id.includes(":documenti:");
       const isDestinatariGroup = node.id.endsWith(":destinatari");
       const partyRootId =
-        isDocumentsGroup || isDestinatariGroup
+        isDocumentsGroup || isDocumentSubGroup || isDestinatariGroup
           ? node.id.split(":").slice(0, 2).join(":")
           : node.id;
+      const documentGroupId = `${partyRootId}:documenti`;
+      const currentDocumentGroup = findNodeById(treeNodes, documentGroupId);
+      const shouldReloadDocuments =
+        !loadedDocumentsFor.includes(partyRootId) || nodeHasDocumentPlaceholder(currentDocumentGroup);
 
-      if (isPartyResource && (isPartyRoot || isDocumentsGroup) && !loadedDocumentsFor.includes(partyRootId)) {
+      if (
+        isPartyResource &&
+        (isPartyRoot || isDocumentsGroup || isDocumentSubGroup) &&
+        shouldReloadDocuments
+      ) {
+        const partyRootNode = findNodeById(treeNodes, partyRootId);
+        const partyRootRaw = ((partyRootNode?.raw ?? {}) as Row);
         const ownerLabel =
           asText(getByPath(raw, "ownerLabel")) ??
+          asText(getByPath(partyRootRaw, "ownerLabel")) ??
           asText(getByPath(raw, "anagrafica.ragioneSociale")) ??
+          asText(getByPath(partyRootRaw, "anagrafica.ragioneSociale")) ??
           asText(getByPath(raw, "ragioneSociale")) ??
+          asText(getByPath(partyRootRaw, "ragioneSociale")) ??
+          partyRootNode?.label ??
           node.label;
 
         const ownerCode =
           asText(getByPath(raw, "ownerCode")) ??
+          asText(getByPath(partyRootRaw, "ownerCode")) ??
           asText(getByPath(raw, "cliFor")) ??
+          asText(getByPath(partyRootRaw, "cliFor")) ??
           partyRootId.split(":")[1];
 
         if (!ownerCode) return;
@@ -810,38 +834,24 @@ export default function Home() {
           resourceType: "ordini" as const,
           pageSize: searchContext.pageSize,
         };
-
-        let docs = await fetchLocalRows({
-          ...baseOrderRequest,
-          filters: activeResource === "fornitori" ? { cliforfatt: ownerCode } : { cliForDest: ownerCode },
-          extendedMode: true,
-        });
-        docs = filterDocsByOwner(docs, ownerCode, activeResource, ownerLabel);
-
-        if (docs.length === 0) {
-          if (activeResource === "fornitori") {
-            docs = [];
-          } else {
-            docs = await fetchLocalRows({
-              ...baseOrderRequest,
-              filters: { cliforfatt: ownerCode },
-              extendedMode: true,
-            });
-            docs = filterDocsByOwner(docs, ownerCode, activeResource, ownerLabel);
-          }
-        }
-
-        if (docs.length === 0) {
-          const broadDocs = await fetchAllPages(
+        const getAllOrders = async (): Promise<Row[]> => {
+          if (allOrdersCacheRef.current) return allOrdersCacheRef.current;
+          const allDocs = await fetchAllPages(
             {
               ...baseOrderRequest,
               filters: {},
               extendedMode: false,
+              pageSize: Math.max(searchContext.pageSize, 300),
             },
-            8
+            searchContext.maxPages
           );
-          docs = filterDocsByOwner(broadDocs, ownerCode, activeResource, ownerLabel);
-        }
+          allOrdersCacheRef.current = allDocs;
+          return allDocs;
+        };
+
+        const allDocs = await getAllOrders();
+        let docs = filterDocsByOwnerCode(allDocs, ownerCode);
+        docs = dedupeDocs(docs);
 
         const classFolders =
           docs.length > 0
@@ -1009,7 +1019,7 @@ export default function Home() {
         setLoadedRowsFor((prev) => [...prev, node.id]);
       }
     },
-    [activeResource, loadedDestinatariFor, loadedDocumentsFor, loadedRowsFor, partyNameByCode, searchContext]
+    [activeResource, loadedDestinatariFor, loadedDocumentsFor, loadedRowsFor, partyNameByCode, searchContext, treeNodes]
   );
 
   const handleNodeSelect = useCallback(
@@ -1021,6 +1031,35 @@ export default function Home() {
       });
     },
     [enrichNodeOnDemand]
+  );
+
+  const handleExpandedIdsChange = useCallback(
+    (nextExpandedIds: string[]) => {
+      const newlyExpandedIds = nextExpandedIds.filter((id) => !expandedIds.includes(id));
+      setExpandedIds(nextExpandedIds);
+
+      if (newlyExpandedIds.length === 0) return;
+
+      for (const nodeId of newlyExpandedIds) {
+        const node = findNodeById(treeNodes, nodeId);
+        if (!node) continue;
+        const isPartyRoot = node.id.split(":").length === 2;
+        const isDocumentsGroup = node.id.endsWith(":documenti");
+        const isDocumentSubGroup = node.id.includes(":documenti:");
+        const isDestinatariGroup = node.id.endsWith(":destinatari");
+        const isPartyResource = activeResource === "clienti" || activeResource === "fornitori";
+        const shouldHydrate =
+          (isPartyResource && (isPartyRoot || isDocumentsGroup || isDocumentSubGroup || isDestinatariGroup)) ||
+          (activeResource === "ordini" && !node.id.endsWith(":righe"));
+
+        if (!shouldHydrate) continue;
+
+        void enrichNodeOnDemand(node).catch((err) => {
+          setError(err instanceof Error ? err.message : "Errore durante il caricamento dettaglio");
+        });
+      }
+    },
+    [activeResource, enrichNodeOnDemand, expandedIds, treeNodes]
   );
 
   const detailNode = useMemo(() => {
@@ -1105,7 +1144,7 @@ export default function Home() {
                 onSearchQueryChange={setSearchQuery}
                 enableClientFilter
                 expandedIds={expandedIds}
-                onExpandedIdsChange={setExpandedIds}
+                onExpandedIdsChange={handleExpandedIdsChange}
                 searchPlaceholder={activeMeta.searchPlaceholder}
                 emptyStateTitle={isLoading ? "Caricamento" : "Nessun nodo trovato"}
                 emptyStateDescription={

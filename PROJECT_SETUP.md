@@ -5,7 +5,7 @@
 - **Created:** 2026-03-27
 - **Framework:** Next.js 15 with TypeScript
 - **Styling:** Tailwind CSS
-- **Location:** `C:\TS-API`
+- **Location:** `<PROJECT_ROOT>`
 
 ## Current Status
 
@@ -45,7 +45,7 @@ TS-API/
 
 ```bash
 # Avviare il server di sviluppo
-cd C:\TS-API
+cd <PROJECT_ROOT>
 npm run dev
 
 # Build per produzione

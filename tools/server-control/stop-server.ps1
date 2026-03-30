@@ -2,11 +2,16 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "[TS-API] Arresto server locale..."
 
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$rootPattern = [regex]::Escape($root)
+
 $targets = Get-CimInstance Win32_Process | Where-Object {
-  $_.Name -eq "node.exe" -and (
-    $_.CommandLine -match "C:\\TS-API\\" -or
-    $_.CommandLine -match "npm-cli\.js`" run dev"
-  )
+  if ($_.Name -ne "node.exe") { return $false }
+  $cmd = $_.CommandLine
+  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }
+  $isProjectProcess = $cmd -match $rootPattern
+  $isDevServerProcess = $cmd -match "npm-cli\.js`" run dev" -or $cmd -match "next[\\/]dist[\\/]bin[\\/]next.*\bdev\b"
+  return $isProjectProcess -and $isDevServerProcess
 }
 
 if ($targets) {

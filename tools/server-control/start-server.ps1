@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$root = "C:\TS-API"
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 Write-Host "[TS-API] Avvio server locale..."
 
@@ -22,7 +22,7 @@ if ($alreadyUp) {
   exit 0
 }
 
-Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile","-Command","cd $root; npm run dev" -WindowStyle Hidden
+Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile","-Command","npm run dev" -WorkingDirectory $root -WindowStyle Hidden
 Write-Host "[TS-API] Avvio richiesto. Attendi alcuni secondi e apri http://localhost:3000"
 exit 0
 
