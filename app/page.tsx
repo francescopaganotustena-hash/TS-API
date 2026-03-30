@@ -834,23 +834,65 @@ export default function Home() {
           resourceType: "ordini" as const,
           pageSize: searchContext.pageSize,
         };
+        const docsPageSize = 500;
+        const targetedFilters =
+          activeResource === "fornitori"
+            ? { cliforfatt: ownerCode }
+            : { clifordest: ownerCode };
+
+        const getTargetedOrders = async (): Promise<Row[]> =>
+          fetchAllPages(
+            {
+              ...baseOrderRequest,
+              filters: targetedFilters,
+              extendedMode: false,
+              pageSize: docsPageSize,
+            },
+            searchContext.maxPages
+          );
+
+        const getTargetedOrdersFirstPage = async (): Promise<Row[]> =>
+          fetchLocalRows({
+            ...baseOrderRequest,
+            filters: targetedFilters,
+            extendedMode: false,
+            pageNumber: 0,
+            pageSize: docsPageSize,
+          });
+
         const getAllOrders = async (): Promise<Row[]> => {
-          if (allOrdersCacheRef.current) return allOrdersCacheRef.current;
+          if (allOrdersCacheRef.current !== null && allOrdersCacheRef.current.length > 0) return allOrdersCacheRef.current;
           const allDocs = await fetchAllPages(
             {
               ...baseOrderRequest,
               filters: {},
               extendedMode: false,
-              pageSize: Math.max(searchContext.pageSize, 300),
+              pageSize: docsPageSize,
             },
             searchContext.maxPages
           );
-          allOrdersCacheRef.current = allDocs;
+          if (allDocs.length > 0) allOrdersCacheRef.current = allDocs;
           return allDocs;
         };
 
-        const allDocs = await getAllOrders();
-        let docs = filterDocsByOwnerCode(allDocs, ownerCode);
+        let docs: Row[] = [];
+        try {
+          docs = await getTargetedOrders();
+        } catch {
+          try {
+            docs = await getTargetedOrdersFirstPage();
+          } catch {
+            // ignore, fallback to getAllOrders below
+          }
+        }
+        if (docs.length === 0) {
+          try {
+            const allDocs = await getAllOrders();
+            docs = filterDocsByOwnerCode(allDocs, ownerCode);
+          } catch {
+            docs = [];
+          }
+        }
         docs = dedupeDocs(docs);
 
         const classFolders =

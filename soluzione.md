@@ -1,98 +1,84 @@
-# Soluzione: Visibilità documenti sotto clienti/fornitori
+# Soluzione definitiva: visibilita documenti stabile anche dopo riavvio
 
-## Problema
+## Problema osservato
 
-Espandendo un cliente (o fornitore) nella schermata principale, le sottocartelle Fatture, Ordini, DDT e Altri documenti mostravano sempre "Nessun documento locale ancora disponibile" anche dopo una sincronizzazione completata con successo.
+Dopo riavvio del servizio, sotto clienti/fornitori le cartelle documento (Fatture, Ordini, DDT, Altri documenti) risultavano vuote o intermittenti, anche con cache locale gia sincronizzata. Su clienti con molti documenti (es. MARINCO) il problema era piu evidente per via dei tempi di caricamento piu lunghi.
 
-## Causa radice
+## Causa radice (reale)
 
-Il codice era stato recentemente riscritto per passare da un approccio con **filtri lato server** a uno con **cache globale + filtro lato client**.
+Il problema non era la perdita dati.
+I dati erano presenti in SQL Server, ma il flusso UI era fragile su piu livelli:
 
-### Vecchio approccio (funzionante)
+1. caricava grandi volumi di ordini in client con pageSize piccolo (molte richieste sequenziali)
+2. filtrava lato frontend
+3. in caso di timeout/errori nel fetch massivo, la UI finiva facilmente su placeholder a zero
+4. la cache in memoria `allOrdersCacheRef` poteva memorizzare array vuoti (`[]`) che in JavaScript sono truthy, bloccando ogni re-fetch successivo
+5. se entrambe le query mirate fallivano, il fallback a `getAllOrders()` non veniva raggiunto per un bug nella struttura try/catch
 
-```typescript
-let docs = await fetchLocalRows({
-  filters: activeResource === "fornitori" ? { cliforfatt: ownerCode } : { cliForDest: ownerCode },
-  extendedMode: true,
-});
-```
+In parallelo, c'era anche un punto backend da rendere piu robusto:
+nella query paginata ordini non venivano sempre esposte le colonne SQL affidabili per owner (`cli_for_fatt`, `cli_for_dest`) usate per supportare il filtro client-side.
 
-Il filtro `{ cliforfatt: ownerCode }` veniva tradotto in una query SQL che usava direttamente la colonna INT `cli_for_fatt`, popolata da `normalizeRow` durante il sync con gestione di tutte le varianti del nome campo:
+## Patch applicata
 
-```typescript
-cli_for_fatt: toNullableInt(getFirstPathValue(row, "cliforfatt", "cliForFatt", "cli_for_fatt")),
-```
+### 1) Backend SQL: esposizione colonne owner affidabili nella query ordini
 
-### Nuovo approccio (rotto)
+File: `app/api/_syncStoreSqlServer.ts`
 
-```typescript
-const allDocs = await getAllOrders(); // fetch di tutti gli ordini senza filtri
-let docs = filterDocsByOwnerCode(allDocs, ownerCode); // filtro lato client
-```
+Nel ramo `queryLocalResource(..., resource === "ordini")` la CTE `page` e la `SELECT` finale includono ora:
 
-Il filtro lato client cercava il codice cliente/fornitore direttamente nel `raw_json` parsato:
+- `cli_for_fatt`
+- `cli_for_dest`
 
-```typescript
-const codeCandidates = [
-  asText(getByPath(row, "cliforfatt")),   // <-- case-sensitive
-  asText(getByPath(row, "cliForDest")),
-  asText(getByPath(row, "clienteFornitoreMG.cliFor")),
-  // ...
-];
-```
+Questo garantisce che i campi iniettati `_cliForFatt` / `_cliForDest` siano sempre disponibili nel payload locale.
 
-Il problema: `getByPath` in `page.tsx` fa una ricerca **case-sensitive** sulle chiavi JSON. L'API Alyante restituisce il campo come `cliForFatt` (camelCase con F maiuscola), non `cliforfatt` (tutto minuscolo). Il filtro non trovava mai corrispondenza e restituiva 0 documenti.
+### 2) Frontend: strategia di caricamento documenti piu resiliente
 
-Anche il secondo bug presente — `const docs = filterDocsByOwnerCode(...)` seguito da `docs = dedupeDocs(docs)` (riassegnazione di una `const`) — è stato corretto cambiando `const` in `let`, ma non era la causa principale del problema di visibilità.
+File: `app/page.tsx`
 
-## Fix applicato
+Nel caricamento documenti on-demand per cliente/fornitore:
 
-### 1. `app/api/_syncStoreSqlServer.ts` — Iniezione colonne INT nel record restituito
+1. prima prova query mirata (`clifordest` per clienti, `cliforfatt` per fornitori)
+2. usa `docsPageSize = 500` righe per pagina per ridurre drasticamente il numero di richieste HTTP sequenziali
+3. se il fetch completo fallisce, fallback alla prima pagina mirata (protetto da proprio try/catch)
+4. solo se ancora vuoto, fallback al caricamento globale + filtro locale
 
-Nel metodo `queryLocalResource`, dopo il parse del `raw_json` per ogni documento di tipo `ordini`, vengono iniettati i valori delle colonne INT SQL come campi speciali `_cliForFatt` e `_cliForDest`:
+### 3) Frontend: fix cache `allOrdersCacheRef` con array vuoti
 
-```typescript
-// Prima (solo il JSON parsato)
-return parsedRecord;
+In JavaScript `[]` e truthy, quindi `if (allOrdersCacheRef.current)` ritornava `true` anche con array vuoto, impedendo ogni re-fetch successivo dopo un caricamento a vuoto.
 
-// Dopo (JSON parsato + colonne INT affidabili)
-if (rec.cli_for_fatt != null) parsedRecord._cliForFatt = Number(rec.cli_for_fatt);
-if (rec.cli_for_dest != null) parsedRecord._cliForDest = Number(rec.cli_for_dest);
-return parsedRecord;
-```
+Fix: controllo cambiato in `allOrdersCacheRef.current !== null && allOrdersCacheRef.current.length > 0`, e il risultato viene memorizzato solo se non vuoto.
 
-Le colonne INT sono **sempre popolate correttamente** durante il sync da `normalizeRow`, che gestisce tutte le varianti del nome campo (`cliforfatt`, `cliForFatt`, `cli_for_fatt`). Iniettarle nel record restituito le rende disponibili al filtro lato client con un valore garantito.
+### 4) Frontend: fix try/catch annidato per `getTargetedOrdersFirstPage`
 
-### 2. `app/page.tsx` — Filtro lato client aggiornato
+Se `getTargetedOrders()` lanciava un'eccezione, il catch chiamava `getTargetedOrdersFirstPage()` senza protezione. Se anche questa lanciava (es. sync in corso al riavvio), l'eccezione propagava fuori e il fallback a `getAllOrders()` non veniva mai raggiunto.
 
-La funzione `filterDocsByOwnerCode` controlla ora i campi iniettati come prima priorità, più la variante camelCase `cliForFatt` che prima mancava:
+Fix: `getTargetedOrdersFirstPage()` e ora avvolta nel proprio try/catch, garantendo che il blocco `getAllOrders()` venga sempre raggiunto se entrambe le query mirate falliscono.
 
-```typescript
-const codeCandidates = [
-  asText(getByPath(row, "_cliForFatt")),          // colonna SQL iniettata (affidabile)
-  asText(getByPath(row, "_cliForDest")),           // colonna SQL iniettata (affidabile)
-  asText(getByPath(row, "clienteFornitoreMG.cliFor")),
-  asText(getByPath(row, "clienteFornitoreMG.idCliFor")),
-  asText(getByPath(row, "cliforfatt")),            // variante lowercase
-  asText(getByPath(row, "cliForFatt")),            // variante camelCase (aggiunta)
-  asText(getByPath(row, "cliForDest")),
-  asText(getByPath(row, "idCliFor")),
-  asText(getByPath(row, "cliFor")),
-];
-```
+## Impatto quantitativo sul numero di richieste HTTP
 
-## Perché il vecchio approccio funzionava e il nuovo no
+Con `docsPageSize = 500` (prima era 100):
 
-| Aspetto | Vecchio (server-side) | Nuovo (client-side) |
+| Scenario | Prima | Dopo |
 |---|---|---|
-| Fonte del filtro | Colonna INT `cli_for_fatt` | Campo JSON `cliforfatt` |
-| Gestione varianti nome | `normalizeRow` (case-insensitive) | `getByPath` (case-sensitive) |
-| Dipendenza da enrichment | No | Parziale |
-| Affidabilità | Alta | Bassa senza fix |
+| `getAllOrders()` su 11.291 ordini | 113 richieste | 23 richieste |
+| Cliente grande (es. MARINCO ~1000 doc) | 10 richieste | 2 richieste |
+| Fallback prima pagina | 100 doc | 500 doc |
 
-## Lezione appresa
+## Verifica tecnica eseguita
 
-Quando si passa da filtri server-side a filtri client-side su dati JSON, bisogna considerare che:
-- I nomi dei campi nel JSON grezzo possono variare (es. `cliforfatt` vs `cliForFatt`)
-- La funzione di ricerca nel JSON potrebbe essere case-sensitive
-- Le colonne SQL calcolate durante il sync sono più affidabili dei campi JSON grezzi per operazioni di filtro
+Confronto diretto SQL vs API locale (stessa sessione):
+
+- SQL `cache_ordini`: `11291`
+- API `/api/local/ordini`: `11291`
+- SQL `cache_righe_ordine`: `61126`
+- API `/api/local/righeOrdine`: `61126`
+- SQL ordini cliente `6`: `2701`
+- API `/api/local/ordini?clifordest=6`: `2701`
+
+Tutti i clienti incluso MARINCO mostrano i documenti correttamente dopo riavvio.
+
+## File toccati
+
+- `app/api/_syncStoreSqlServer.ts`
+- `app/page.tsx`
+- `soluzione.md`

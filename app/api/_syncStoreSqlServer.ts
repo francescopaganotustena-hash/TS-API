@@ -1106,7 +1106,7 @@ export async function queryLocalResource(
     const dataSql =
       resource === "ordini"
         ? `WITH page AS (
-             SELECT row_id, updated_at, raw_json, num_reg
+             SELECT row_id, updated_at, raw_json, num_reg, cli_for_fatt, cli_for_dest
              FROM ${tableName}
              ${whereClause}
              ORDER BY row_id
@@ -1116,6 +1116,8 @@ export async function queryLocalResource(
              page.row_id,
              page.updated_at,
              page.raw_json,
+             page.cli_for_fatt,
+             page.cli_for_dest,
              totals.importo_righe
            FROM page
            OUTER APPLY (
